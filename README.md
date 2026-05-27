@@ -12,8 +12,8 @@
 - 🇯🇵 **日语假名标注**：
   - 内置 **Kuromoji IPADIC** 日语分析器，自动为日语歌词行上方标注罗马音，方便日语学习与跟唱。
 - 🎨 **极佳的视觉特效**：
-  - 歌词渲染通过内置 WebView 运行的本地前端微应用（位于 `app/src/main/assets/lyrics-web`）驱动。
-  - 支持类似原生 Apple Music 的歌词模糊、动态缩放、平滑滚动、平移淡入淡出及翻译和读音标注特效。
+  - 歌词渲染通过内置 WebView 运行的本地前端微应用驱动。
+  - 实现类似 Apple Music 的歌词模糊、动态缩放、平滑滚动、平移淡入淡出及翻译和读音标注特效。
 - ⏱️ **高精度本地同步**：
   - 本地解析 LRC 时间戳，通过与 Spotify 播放进度对齐，实现超低延迟的平滑滚动。
 
@@ -44,7 +44,7 @@
 本项目的发行包已为您编译完成。
 
 1. **直接安装（推荐）**：
-   * 将编译好的 [app-release.apk](app/build/outputs/apk/release/app-release.apk) 复制到您的 Android 手机上直接安装。
+   * 将编译好的 app-release.apk 下载到您的 Android 手机上直接安装。
 2. **自行编译**：
    * 用 **Android Studio** 打开项目
    * 直接运行 `app` 配置，或者在终端运行以下命令：
