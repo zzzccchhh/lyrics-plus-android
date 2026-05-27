@@ -1,0 +1,423 @@
+:root {
+  color-scheme: dark;
+  --active: #ffffff;
+  --translation: rgba(255, 255, 255, 0.58);
+  --inactive: rgba(255, 255, 255, 0.18);
+  --inactive-soft: rgba(255, 255, 255, 0.12);
+  --bg-a: #c72d75;
+  --bg-b: #2b1126;
+  --bg-c: #f06aa5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #101010;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.stage {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #101010;
+  z-index: 0;
+}
+
+.stage::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  transition: all 1.2s ease-in-out;
+}
+
+/* Animation running state: flowing linear gradient */
+.stage.animation-running::before {
+  inset: 0;
+  background: linear-gradient(165deg,
+      var(--bg-b) 0%,
+      var(--bg-b) 10%,
+      var(--bg-a) 40%,
+      var(--bg-c) 50%,
+      var(--bg-a) 60%,
+      var(--bg-b) 90%,
+      var(--bg-b) 100%);
+  background-size: 100% 200%;
+  opacity: 0.8;
+  filter: none;
+  animation: flowDown var(--flow-duration, 45s) linear infinite;
+  will-change: background-position;
+}
+
+/* Animation paused/off state: gorgeous static radial gradient album color blocks */
+.stage.animation-paused::before {
+  inset: -100px;
+  background:
+    radial-gradient(circle at 20% 30%, var(--bg-c) 0%, transparent 60%),
+    radial-gradient(circle at 80% 20%, var(--bg-a) 0%, transparent 60%),
+    radial-gradient(circle at 70% 70%, var(--bg-c) 0%, transparent 60%),
+    radial-gradient(circle at 30% 80%, var(--bg-a) 0%, transparent 60%);
+  background-color: var(--bg-b);
+  filter: blur(55px);
+  opacity: 0.65;
+  animation: none;
+}
+
+@keyframes flowDown {
+  0% {
+    background-position: 0% 0%;
+  }
+
+  100% {
+    background-position: 0% 200%;
+  }
+}
+
+.trackHeader {
+  display: none;
+}
+
+.trackTitle {
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trackArtist {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+.lyrics {
+  position: absolute;
+  /* 1/4 of the space between header bottom and screen bottom */
+  top: calc(var(--header-bottom, 120px) + (100vh - var(--header-bottom, 120px)) / 4);
+  left: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  transition: transform 550ms cubic-bezier(0.22, 0.68, 0.35, 1);
+  perspective: 900px;
+  z-index: 4;
+  will-change: transform;
+}
+
+.line {
+  position: relative;
+  width: calc(100vw - 48px);
+  margin-left: 24px;
+  margin-bottom: 32px;
+  text-align: left;
+  transform-origin: left center;
+  filter: blur(0);
+  transition:
+    transform 500ms cubic-bezier(0.22, 0.68, 0.35, 1),
+    opacity 450ms cubic-bezier(0.22, 0.68, 0.35, 1),
+    filter 450ms cubic-bezier(0.22, 0.68, 0.35, 1);
+  will-change: transform, opacity, filter;
+}
+
+.romaji {
+  display: block;
+  margin-bottom: 3px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 17px;
+  line-height: 1.1;
+  font-weight: 850;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.text {
+  display: block;
+  color: var(--inactive);
+  font-size: 48px;
+  line-height: 1.2;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  transition: color 400ms cubic-bezier(0.22, 0.68, 0.35, 1),
+    text-shadow 400ms cubic-bezier(0.22, 0.68, 0.35, 1);
+}
+
+.translation {
+  display: block;
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.12);
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  transition: color 400ms cubic-bezier(0.22, 0.68, 0.35, 1);
+}
+
+.line.active .text {
+  color: var(--active);
+  text-shadow: 0 10px 32px rgba(0, 0, 0, 0.16);
+}
+
+.line.active .translation {
+  color: var(--translation);
+}
+
+.line.long .text {
+  font-size: 38px;
+}
+
+.line.long .translation {
+  font-size: 24px;
+}
+
+.line.short .text {
+  font-size: 56px;
+}
+
+.line.far .text,
+.line.far .translation {
+  color: var(--inactive-soft);
+}
+
+.line.near {
+  filter: blur(2px);
+}
+
+.line.far {
+  filter: blur(7px);
+}
+
+@media (min-width: 700px) {
+  .text {
+    font-size: 70px;
+  }
+
+  .translation {
+    font-size: 45px;
+  }
+
+  .romaji {
+    font-size: 26px;
+  }
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px;
+  color: white;
+  z-index: 4;
+}
+
+.empty[hidden] {
+  display: none;
+}
+
+.empty h1 {
+  margin: 0 0 10px;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.empty p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 17px;
+}
+
+/* Intro sequential dots animation */
+.intro-dots {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.intro-dots .dot {
+  opacity: 0.15;
+  animation: dotSequentialFade 3s infinite ease-in-out;
+  display: inline-block;
+  transform-origin: center center;
+}
+
+.intro-dots .dot-1 {
+  animation-delay: 0s;
+}
+
+.intro-dots .dot-2 {
+  animation-delay: 0.7s;
+}
+
+.intro-dots .dot-3 {
+  animation-delay: 1.4s;
+}
+
+/* Stop dots animation when not the active line */
+.line:not(.active) .intro-dots .dot {
+  animation: none;
+  opacity: 0.3;
+  transform: scale(1);
+}
+
+@keyframes dotSequentialFade {
+
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.9);
+  }
+
+  33% {
+    opacity: 0.95;
+    transform: scale(1.25);
+  }
+}
+
+/* Full Lyrics Mode styling */
+.stage.full-lyrics-mode {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  padding-top: var(--status-bar-height, 40px);
+}
+
+.stage.full-lyrics-mode .lyrics {
+  position: relative;
+  top: 15vh;
+  padding-bottom: 50vh;
+  /* Space at bottom so last lines can be scrolled to center */
+  transform: none !important;
+  transition: none !important;
+}
+
+/* In full-lyrics-mode, ALL lines are fully visible */
+.stage.full-lyrics-mode .line {
+  opacity: 1 !important;
+  filter: none !important;
+  transform: none !important;
+  transition: none;
+}
+
+/* Lock font sizes — active line must NOT change size to prevent reflow */
+.stage.full-lyrics-mode .line .text,
+.stage.full-lyrics-mode .line.active .text {
+  font-size: 42px !important;
+  color: rgba(255, 255, 255, 0.35);
+  transition: color 350ms ease, text-shadow 350ms ease;
+}
+
+.stage.full-lyrics-mode .line .translation,
+.stage.full-lyrics-mode .line.active .translation {
+  font-size: 26px !important;
+  color: rgba(255, 255, 255, 0.2);
+  transition: color 350ms ease;
+}
+
+.stage.full-lyrics-mode .line.long .text,
+.stage.full-lyrics-mode .line.active.long .text {
+  font-size: 34px !important;
+}
+
+.stage.full-lyrics-mode .line.short .text,
+.stage.full-lyrics-mode .line.active.short .text {
+  font-size: 48px !important;
+}
+
+.stage.full-lyrics-mode .line.long .translation,
+.stage.full-lyrics-mode .line.active.long .translation {
+  font-size: 22px !important;
+}
+
+
+.stage.full-lyrics-mode .line.active .text {
+  color: #ffffff;
+  text-shadow: 0 0 24px rgba(255, 255, 255, 0.15);
+}
+
+.stage.full-lyrics-mode .line.active .translation {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+/* Romaji: hidden by default, only visible on active line */
+.stage.full-lyrics-mode .line .romaji {
+  display: none;
+}
+
+.stage.full-lyrics-mode .line.active .romaji {
+  display: block;
+}
+
+/* Past lines slightly dimmer than future lines */
+.stage.full-lyrics-mode .line.past .text {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.stage.full-lyrics-mode .line.past .translation {
+  color: rgba(255, 255, 255, 0.14);
+}
+
+.lyrics-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* In full-lyrics-mode, the viewport scrolls, not the stage */
+.stage.full-lyrics-mode {
+  overflow-y: hidden !important;
+}
+
+.stage.full-lyrics-mode .lyrics-viewport {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  padding-top: var(--status-bar-height, 40px);
+  clip-path: inset(var(--status-bar-height, 40px) 0 0 0);
+  pointer-events: auto;
+  /* Re-enable pointer events for scrolling */
+}
+
+.stage.full-lyrics-mode .lyrics-viewport .lyrics {
+  pointer-events: auto;
+}
+
+.top-blur-bar {
+  display: none;
+}
+
+/* Hide the blur bar in All Lyrics mode since top controls are hidden */
+.stage.full-lyrics-mode .top-blur-bar {
+  opacity: 0;
+}

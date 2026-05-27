@@ -1,0 +1,184 @@
+package com.lyricsplus.android.lyrics
+
+import com.lyricsplus.android.data.LyricsLine
+import com.lyricsplus.android.data.NowPlaying
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.URLEncoder
+import kotlin.math.abs
+
+class NeteaseClient {
+    suspend fun findSyncedLyrics(track: NowPlaying): Result<List<LyricsLine>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val songId = searchSongId(track) ?: error("Cannot find Netease track")
+            val lyricJson = fetchLyrics(songId) ?: error("Cannot find Netease lyrics")
+            if (lyricJson.optBoolean("nolyric", false)) {
+                return@runCatching listOf(LyricsLine(0L, "♪ 纯音乐 ♪"))
+            }
+            val synced = parseNeteaseLrc(lyricJson.optJSONObject("lrc")?.optString("lyric").orEmpty())
+                .ifEmpty { error("Netease synced lyrics were empty") }
+            val translation = parseNeteaseLrc(lyricJson.optJSONObject("tlyric")?.optString("lyric").orEmpty())
+
+            mergeTranslation(synced, translation)
+        }
+    }
+
+    private fun searchSongId(track: NowPlaying): Long? {
+        val cleanTitle = cleanTitle(track.track)
+        val url = "https://music.163.com/api/cloudsearch/pc?csrf_token=&type=1&offset=0&limit=10&s=" +
+            "${cleanTitle} ${track.artist}".urlEncode()
+        val response = request(url)
+        if (response.code !in 200..299) return null
+
+        val songs = JSONObject(response.body)
+            .optJSONObject("result")
+            ?.optJSONArray("songs")
+            ?: return null
+
+        val normalizedTitle = normalizeForCompare(cleanTitle)
+        val normalizedArtist = normalizeForCompare(track.artist)
+        val normalizedAlbum = normalizeForCompare(track.album)
+
+        return (0 until songs.length())
+            .map { songs.getJSONObject(it) }
+            .map { song ->
+                val name = normalizeForCompare(song.optString("name"))
+                val album = normalizeForCompare(song.optJSONObject("al")?.optString("name") ?: song.optJSONObject("album")?.optString("name").orEmpty())
+                val artists = normalizeForCompare(song.artistNames())
+                val durationMs = song.optLong("dt", song.optLong("duration", 0L))
+                val expectedDurationMs = track.durationSeconds * 1000L
+                val durationDiff = if (expectedDurationMs > 0) abs(expectedDurationMs - durationMs) else Long.MAX_VALUE
+
+                var score = 0
+                if (name == normalizedTitle) score += 50
+                else if (normalizedTitle.isNotBlank() && (name.contains(normalizedTitle) || normalizedTitle.contains(name))) score += 20
+                if (artists.isNotBlank() && normalizedArtist.isNotBlank() && artists == normalizedArtist) score += 40
+                else if (artists.isNotBlank() && normalizedArtist.isNotBlank() && (artists.contains(normalizedArtist) || normalizedArtist.contains(artists))) score += 25
+                if (album.isNotBlank() && album == normalizedAlbum) score += 20
+                if (durationDiff < 3_000) score += 30
+                else if (durationDiff < 10_000) score += 10
+
+                song.optLong("id") to score
+            }
+            .filter { it.first > 0 && it.second > 0 }
+            .maxByOrNull { it.second }
+            ?.first
+    }
+
+    private fun fetchLyrics(songId: Long): JSONObject? {
+        val urls = listOf(
+            "https://music.163.com/api/song/lyric/v1?id=$songId&lv=1&kv=1&tv=1",
+            "https://music.163.com/api/song/lyric?id=$songId&lv=1&kv=1&tv=1"
+        )
+
+        return urls.firstNotNullOfOrNull { url ->
+            val response = request(url)
+            if (response.code !in 200..299) return@firstNotNullOfOrNull null
+            val json = JSONObject(response.body)
+            if (
+                json.optJSONObject("lrc")?.optString("lyric").orEmpty().isNotBlank() ||
+                json.optJSONObject("tlyric")?.optString("lyric").orEmpty().isNotBlank() ||
+                json.optBoolean("nolyric", false)
+            ) {
+                json
+            } else {
+                null
+            }
+        }
+    }
+
+    private fun parseNeteaseLrc(raw: String): List<LyricsLine> {
+        if (raw.isBlank()) return emptyList()
+        return raw.lineSequence()
+            .mapNotNull { line ->
+                val match = timestampRegex.find(line.trim()) ?: return@mapNotNull null
+                val text = line.replace(timestampRegex, "").trim()
+                if (text.isBlank() || containsCredits(text) || text == "纯音乐, 请欣赏") return@mapNotNull null
+
+                val minutes = match.groupValues[1].toLongOrNull() ?: return@mapNotNull null
+                val seconds = match.groupValues[2].toLongOrNull() ?: return@mapNotNull null
+                val millis = match.groupValues[3].padEnd(3, '0').take(3).toLongOrNull() ?: 0L
+                LyricsLine(minutes * 60_000 + seconds * 1_000 + millis, text)
+            }
+            .sortedBy { it.startTimeMs }
+            .toList()
+    }
+
+    private fun mergeTranslation(base: List<LyricsLine>, translation: List<LyricsLine>): List<LyricsLine> {
+        if (translation.isEmpty() || base.looksChinese()) return base
+
+        return base.mapIndexed { index, line ->
+            val nextStart = base.getOrNull(index + 1)?.startTimeMs ?: Long.MAX_VALUE
+            val matched = translation
+                .filter { it.startTimeMs <= line.startTimeMs && it.startTimeMs < nextStart }
+                .minByOrNull { line.startTimeMs - it.startTimeMs }
+
+            if (matched != null && line.startTimeMs - matched.startTimeMs <= 8_000 && comparableText(line.text).isNotBlank()) {
+                line.copy(translation = matched.text)
+            } else {
+                line
+            }
+        }
+    }
+
+    private fun request(url: String): HttpResponse {
+        val request = okhttp3.Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 LyricsPlusAndroid/0.1")
+            .header("Referer", "https://music.163.com/")
+            .build()
+
+        return HttpClient.okHttpClient.newCall(request).execute().use { response ->
+            HttpResponse(
+                code = response.code,
+                body = response.body?.string().orEmpty()
+            )
+        }
+    }
+
+    private fun JSONObject.artistNames(): String {
+        val artists = optJSONArray("ar") ?: optJSONArray("artists") ?: return ""
+        return (0 until artists.length())
+            .joinToString(" ") { artists.getJSONObject(it).optString("name") }
+    }
+
+    private fun cleanTitle(value: String): String =
+        value.replace(extraInfoRegex, "").replace(featRegex, "").trim()
+
+    private fun normalizeForCompare(value: String): String =
+        value.lowercase().replace(whitespaceRegex, "")
+
+    private fun comparableText(value: String): String =
+        value.replace(spacingRegex, "").replace(punctuationRegex, "")
+
+    private fun List<LyricsLine>.looksChinese(): Boolean {
+        val sample = joinToString("") { it.text }.take(200)
+        if (sample.isBlank()) return false
+        val han = sample.count { it in '\u4E00'..'\u9FFF' }
+        val kana = sample.count { it in '\u3040'..'\u30FF' }
+        return han > 0 && kana == 0
+    }
+
+    private fun containsCredits(text: String): Boolean = creditRegex.containsMatchIn(text)
+
+    private fun String.urlEncode(): String = URLEncoder.encode(this, Charsets.UTF_8.name())
+
+    private data class HttpResponse(
+        val code: Int,
+        val body: String
+    )
+
+    private companion object {
+        val timestampRegex = Regex("\\[(\\d{1,2}):(\\d{2})(?:[.:](\\d{1,3}))?]")
+        val extraInfoRegex = Regex("\\s*[\\[(（].*?(?:remaster|remastered|live|mono|stereo|version|edit|mix|feat\\.?|with).*?[\\]）)]\\s*", RegexOption.IGNORE_CASE)
+        val featRegex = Regex("\\s+(feat\\.?|ft\\.?|with)\\s+.+$", RegexOption.IGNORE_CASE)
+        val whitespaceRegex = Regex("\\s+")
+        val spacingRegex = Regex("[　\\s]")
+        val punctuationRegex = Regex("""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~？！，。、《》【】「」]""")
+        val creditRegex = Regex(
+            "^(\\s?作?\\s*词|\\s?作?\\s*曲|\\s?编\\s*曲?|\\s?监\\s*制?|.*编写|.*和音|.*和声|.*合声|.*提琴|.*录|.*工程|.*工作室|.*设计|.*剪辑|.*制作|.*发行|.*出品|.*后期|.*混音|.*缩混|原唱|翻唱|题字|文案|海报|古筝|二胡|钢琴|吉他|贝斯|笛子|鼓|弦乐|lrc|publish|vocal|guitar|program|produce|write|mix).*(:|：)",
+            RegexOption.IGNORE_CASE
+        )
+    }
+}
