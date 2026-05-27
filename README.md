@@ -25,7 +25,7 @@
 
 ### 1. 开启 Spotify 设备广播
 在 Spotify Android 客户端中，依次点击：
-`设置与隐私 -> 应用程序和设备 -> 开启“设备广播状态” (Device Broadcast Status)`。
+`设置与隐私 -> 播放 -> 开启“设备广播状态” (Device Broadcast Status)`。
 *(注：这是 Spotify 系统的安全机制，必须手动开启后，其他应用才能监听到当前的歌曲切换)*
 
 ### 2. 授予通知栏监听权限（强烈推荐）
