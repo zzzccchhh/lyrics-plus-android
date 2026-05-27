@@ -33,6 +33,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -56,6 +59,13 @@ import com.lyricsplus.android.LyricsUiState
 import com.lyricsplus.android.MainViewModel
 import kotlinx.coroutines.delay
 import kotlin.math.max
+import androidx.compose.ui.platform.LocalConfiguration
+import android.content.res.Configuration
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.fillMaxHeight
 
 private val AppBackground = Color(0xFF101010)
 private val Accent = Color(0xFF4AD295)
@@ -89,13 +99,30 @@ private fun LyricsOverlay(
     onOpenSpotify: () -> Unit,
     onOpenNotificationAccess: () -> Unit
 ) {
-    LaunchedEffect(webController.isReady, state.nowPlaying, state.lyrics) {
-        webController.pushTrackAndLyrics(
-            state.nowPlaying,
-            state.lyrics,
-            state.playback.positionMs + state.lyricsOffsetMs,
-            state.playback.isPlaying
-        )
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isMultiPane = isLandscape || (configuration.screenWidthDp >= 600)
+
+    val view = LocalView.current
+    DisposableEffect(state.keepScreenOn) {
+        view.keepScreenOn = state.keepScreenOn
+        onDispose {
+            view.keepScreenOn = false
+        }
+    }
+    val uriHandler = LocalUriHandler.current
+    val isRightAligned = isMultiPane
+
+    LaunchedEffect(webController.isReady, state.nowPlaying) {
+        webController.pushTrack(state.nowPlaying)
+    }
+
+    LaunchedEffect(webController.isReady, state.lyrics) {
+        webController.pushLyrics(state.lyrics)
+    }
+
+    LaunchedEffect(webController.isReady, state.lyrics) {
+        webController.pushPlayback(state.playback.positionMs + state.lyricsOffsetMs, state.playback.isPlaying)
     }
 
     LaunchedEffect(webController.isReady, state.playback, state.lyricsOffsetMs) {
@@ -106,12 +133,38 @@ private fun LyricsOverlay(
         webController.pushRomajiState(state.showRomaji)
     }
 
-    LaunchedEffect(webController.isReady, state.animationDuration) {
-        webController.pushAnimationDuration(state.animationDuration)
+    LaunchedEffect(webController.isReady, isRightAligned) {
+        webController.pushRightAligned(isRightAligned)
     }
 
-    LaunchedEffect(webController.isReady, state.animationRunning) {
-        webController.pushAnimationPlayState(state.animationRunning)
+    // Push safe area insets (system bars + display cutout) to the WebView
+    // Use ViewCompat to get actual insets including display cutout (camera notch)
+    val safeInsetConfig = remember(configuration) {
+        configuration.orientation // trigger recomposition on rotation
+    }
+    LaunchedEffect(webController.isReady, safeInsetConfig) {
+        val webView = webController.webView
+        val density = webView.context.resources.displayMetrics.density
+
+        // Try to get actual window insets via ViewCompat (includes display cutout)
+        val windowInsets = androidx.core.view.ViewCompat.getRootWindowInsets(webView)
+        if (windowInsets != null) {
+            val typeMask = androidx.core.view.WindowInsetsCompat.Type.systemBars() or
+                    androidx.core.view.WindowInsetsCompat.Type.displayCutout()
+            val insets = windowInsets.getInsets(typeMask)
+            val topDp = if (density > 0) (insets.top / density).toInt() else 28
+            val rightDp = if (density > 0) (insets.right / density).toInt() else 0
+            val bottomDp = if (density > 0) (insets.bottom / density).toInt() else 0
+            val leftDp = if (density > 0) (insets.left / density).toInt() else 0
+            webController.pushSafeInsets(topDp, rightDp, bottomDp, leftDp)
+        } else {
+            // Fallback: use system resource values
+            val resources = webView.context.resources
+            val statusBarResId = resources.getIdentifier("status_bar_height", "dimen", "android")
+            val statusBarPx = if (statusBarResId > 0) resources.getDimensionPixelSize(statusBarResId) else 0
+            val statusBarDp = if (density > 0) (statusBarPx / density).toInt() else 28
+            webController.pushSafeInsets(statusBarDp, 0, 0, 0)
+        }
     }
 
     var isExpanded by remember { mutableStateOf(false) }
@@ -119,9 +172,23 @@ private fun LyricsOverlay(
     var playbackButtonsShowTrigger by remember { mutableStateOf(0) }
     var headerHeightPx by remember { mutableStateOf(0) }
 
+    LaunchedEffect(webController.isReady, isMultiPane, headerHeightPx) {
+        if (isMultiPane) {
+            webController.pushHeaderHeight(0)
+        } else {
+            webController.pushHeaderHeight(headerHeightPx)
+        }
+    }
+
     LaunchedEffect(isButtonVisible, isExpanded) {
         if (isButtonVisible && !isExpanded) {
             delay(4000)
+            isButtonVisible = false
+        }
+    }
+
+    LaunchedEffect(isExpanded) {
+        if (!isExpanded) {
             isButtonVisible = false
         }
     }
@@ -188,157 +255,168 @@ private fun LyricsOverlay(
             )
         }
 
-        // PREMIUM TOP INTEGRATED INFO & CONTROLLER HEADER BAR
+        // PREMIUM TOP INTEGRATED INFO & CONTROLLER HEADER BAR / LEFT SPLIT BAR
         if (state.nowPlaying.hasTrack && !webController.isFullLyricsMode) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-                    .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        // Toggle: if controls are showing, hide them; otherwise show
-                        if (playbackButtonsShowTrigger > 0) {
-                            playbackButtonsShowTrigger = 0
-                        } else {
-                            playbackButtonsShowTrigger++
-                        }
-                    }
-                    .padding(horizontal = 24.dp, vertical = 18.dp)
-                    .onGloballyPositioned { coordinates ->
-                        val h = coordinates.size.height
-                        if (h != headerHeightPx) {
-                            headerHeightPx = h
-                            webController.pushHeaderHeight(h)
-                        }
-                    },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Track Info Column (Left side)
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+            if (isMultiPane) {
+                // Split-Screen layout overlay
+                Row(
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Text(
-                        text = state.nowPlaying.track,
-                        color = Color.White,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        lineHeight = 36.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = state.nowPlaying.artist,
-                        color = Color(0xB3FFFFFF),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        lineHeight = 24.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                // Spacing between text and buttons
-                Spacer(modifier = Modifier.width(20.dp))
-
-                // Playback Controls Row (Right side)
-                AnimatedVisibility(
-                    visible = playbackButtonsShowTrigger > 0,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    // Left Column: Album art + info as one centered visual group
+                    Column(
+                        modifier = Modifier
+                            .weight(0.45f)
+                            .fillMaxHeight()
+                            .statusBarsPadding()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        val isPlaying = state.playback.isPlaying
-
-                        // Play / Pause Button
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clickable(
-                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                                    indication = null
-                                ) {
-                                    playbackButtonsShowTrigger++
-                                    viewModel.togglePlayback()
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isPlaying) {
-                                Canvas(modifier = Modifier.size(24.dp)) {
-                                    val barWidth = size.width * 0.18f
-                                    val gap = size.width * 0.22f
-                                    val h = size.height * 0.55f
-                                    val startY = size.height * 0.225f
-                                    
-                                    // Left bar
-                                    drawRect(
-                                        color = Color.White,
-                                        topLeft = Offset(size.width * 0.26f, startY),
-                                        size = Size(barWidth, h)
-                                    )
-                                    // Right bar
-                                    drawRect(
-                                        color = Color.White,
-                                        topLeft = Offset(size.width * 0.26f + barWidth + gap, startY),
-                                        size = Size(barWidth, h)
-                                    )
-                                }
-                            } else {
-                                Canvas(modifier = Modifier.size(24.dp)) {
-                                    val path = Path().apply {
-                                        moveTo(size.width * 0.32f, size.height * 0.22f)
-                                        lineTo(size.width * 0.82f, size.height * 0.5f)
-                                        lineTo(size.width * 0.32f, size.height * 0.78f)
-                                        close()
-                                    }
-                                    drawPath(path, color = Color.White)
-                                }
-                            }
-                        }
-
-                        // Vertical Divider inside controls
-                        Box(
-                            modifier = Modifier
-                                .height(20.dp)
-                                .width(1.dp)
-                                .background(Color(0x26FFFFFF))
+                        AlbumArtView(
+                            bitmap = state.nowPlaying.albumArt,
+                            startColorHex = state.nowPlaying.backgroundStart,
+                            endColorHex = state.nowPlaying.backgroundEnd,
+                            modifier = Modifier.size(150.dp)
                         )
 
-                        // Skip Next Button
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clickable(
-                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                                    indication = null
-                                ) {
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Text(
+                            text = state.nowPlaying.track,
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            lineHeight = 24.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = state.nowPlaying.artist,
+                            color = Color(0xB3FFFFFF),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            lineHeight = 18.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        // Playback controls row
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(20.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            PlayPauseButton(
+                                isPlaying = state.playback.isPlaying,
+                                onClick = { viewModel.togglePlayback() }
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .height(20.dp)
+                                    .width(1.dp)
+                                    .background(Color(0x26FFFFFF))
+                            )
+
+                            SkipNextButton(
+                                onClick = { viewModel.skipToNext() }
+                            )
+                        }
+                    }
+
+                    // Right weight (WebView lyrics show and respond to touches underneath)
+                    Spacer(modifier = Modifier.weight(0.55f))
+                }
+            } else {
+                // Portrait Overlay Layout
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .fillMaxWidth()
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            if (playbackButtonsShowTrigger > 0) {
+                                playbackButtonsShowTrigger = 0
+                            } else {
+                                playbackButtonsShowTrigger++
+                            }
+                        }
+                        .padding(horizontal = 24.dp, vertical = 18.dp)
+                        .onGloballyPositioned { coordinates ->
+                            val h = coordinates.size.height
+                            if (h != headerHeightPx) {
+                                headerHeightPx = h
+                            }
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = state.nowPlaying.track,
+                            color = Color.White,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            lineHeight = 36.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = state.nowPlaying.artist,
+                            color = Color(0xB3FFFFFF),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            lineHeight = 24.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(20.dp))
+
+                    AnimatedVisibility(
+                        visible = playbackButtonsShowTrigger > 0 || !state.playback.isPlaying,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            PlayPauseButton(
+                                isPlaying = state.playback.isPlaying,
+                                onClick = {
+                                    playbackButtonsShowTrigger++
+                                    viewModel.togglePlayback()
+                                }
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .height(20.dp)
+                                    .width(1.dp)
+                                    .background(Color(0x26FFFFFF))
+                            )
+
+                            SkipNextButton(
+                                onClick = {
                                     playbackButtonsShowTrigger++
                                     viewModel.skipToNext()
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Canvas(modifier = Modifier.size(24.dp)) {
-                                val path = Path().apply {
-                                    moveTo(size.width * 0.22f, size.height * 0.24f)
-                                    lineTo(size.width * 0.64f, size.height * 0.5f)
-                                    lineTo(size.width * 0.22f, size.height * 0.76f)
-                                    close()
                                 }
-                                drawPath(path, color = Color.White)
-                                
-                                drawRect(
-                                    color = Color.White,
-                                    topLeft = Offset(size.width * 0.69f, size.height * 0.24f),
-                                    size = Size(size.width * 0.12f, size.height * 0.52f)
-                                )
-                            }
+                            )
                         }
                     }
                 }
@@ -394,51 +472,99 @@ private fun LyricsOverlay(
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        // Action 1: 立刻同步时间
-                        MenuActionRow(label = "立刻同步", emoji = "🔄") {
-                            viewModel.forceSyncTime()
-                        }
-
-                        // Action 2: 歌词提前
-                        MenuActionRow(label = "歌词提前 (-0.5s) [当前: $offsetText]", emoji = "⏱️") {
-                            viewModel.adjustOffset(-500)
-                        }
-
-                        // Action 3: 歌词延时
-                        MenuActionRow(label = "歌词延时 (+0.5s) [当前: $offsetText]", emoji = "⏳") {
-                            viewModel.adjustOffset(500)
-                        }
-
-                        // Action 4: 动画速度增加
-                        MenuActionRow(label = "流速加快 (当前: ${state.animationDuration}s)", emoji = "🏃‍♂️") {
-                            viewModel.adjustAnimationSpeed(-5)
-                        }
-
-                        // Action 5: 动画速度降低
-                        MenuActionRow(label = "流速减慢 (当前: ${state.animationDuration}s)", emoji = "🐌") {
-                            viewModel.adjustAnimationSpeed(5)
-                        }
-
-                        // Action 6: 罗马音开启与否
-                        MenuActionRow(
-                            label = if (state.showRomaji) "罗马音: 开启" else "罗马音: 关闭",
-                            emoji = "🔤",
-                            active = state.showRomaji
+                    if (isLandscape) {
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xEE161A18), RoundedCornerShape(16.dp))
+                                .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(16.dp))
+                                .padding(16.dp)
                         ) {
-                            viewModel.toggleRomaji()
-                        }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    MenuActionRow(label = "立刻同步", emoji = "🔄") {
+                                        viewModel.forceSyncTime()
+                                    }
+                                    MenuActionRow(label = "歌词提前 (-0.5s) [当前: $offsetText]", emoji = "🐰") {
+                                        viewModel.adjustOffset(-500)
+                                    }
+                                    MenuActionRow(label = "歌词延时 (+0.5s) [当前: $offsetText]", emoji = "🐢") {
+                                        viewModel.adjustOffset(500)
+                                    }
+                                    MenuActionRow(label = "重新取色", emoji = "🎨") {
+                                        viewModel.rotatePaletteColors()
+                                    }
+                                }
 
-                        // Action 7: 背景动画开启与否
-                        MenuActionRow(
-                            label = if (state.animationRunning) "背景动画: 开启" else "背景动画: 关闭",
-                            emoji = "🎬",
-                            active = state.animationRunning
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    MenuActionRow(
+                                        label = if (state.showRomaji) "罗马音: 开启" else "罗马音: 关闭",
+                                        emoji = "🔤",
+                                        active = state.showRomaji
+                                    ) {
+                                        viewModel.toggleRomaji()
+                                    }
+                                    MenuActionRow(
+                                        label = if (state.keepScreenOn) "屏幕常亮: 开启" else "屏幕常亮: 关闭",
+                                        emoji = "💡",
+                                        active = state.keepScreenOn
+                                    ) {
+                                        viewModel.toggleKeepScreenOn()
+                                    }
+                                    MenuActionRow(label = "检查更新", emoji = "🚀") {
+                                        viewModel.checkForUpdates()
+                                    }
+                                    MenuActionRow(label = "项目地址(欢迎Star)", emoji = "⭐") {
+                                        uriHandler.openUri("https://github.com/Artriai/lyrics-plus-android")
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            viewModel.toggleAnimation()
+                            MenuActionRow(label = "立刻同步", emoji = "🔄") {
+                                viewModel.forceSyncTime()
+                            }
+                            MenuActionRow(label = "歌词提前 (-0.5s) [当前: $offsetText]", emoji = "🐰") {
+                                viewModel.adjustOffset(-500)
+                            }
+                            MenuActionRow(label = "歌词延时 (+0.5s) [当前: $offsetText]", emoji = "🐢") {
+                                viewModel.adjustOffset(500)
+                            }
+                            MenuActionRow(label = "重新取色", emoji = "🎨") {
+                                viewModel.rotatePaletteColors()
+                            }
+                            MenuActionRow(
+                                label = if (state.showRomaji) "罗马音: 开启" else "罗马音: 关闭",
+                                emoji = "🔤",
+                                active = state.showRomaji
+                            ) {
+                                viewModel.toggleRomaji()
+                            }
+                            MenuActionRow(
+                                label = if (state.keepScreenOn) "屏幕常亮: 开启" else "屏幕常亮: 关闭",
+                                emoji = "💡",
+                                active = state.keepScreenOn
+                            ) {
+                                viewModel.toggleKeepScreenOn()
+                            }
+                            MenuActionRow(label = "检查更新", emoji = "🚀") {
+                                viewModel.checkForUpdates()
+                            }
+                            MenuActionRow(label = "项目地址(欢迎Star)", emoji = "⭐") {
+                                uriHandler.openUri("https://github.com/Artriai/lyrics-plus-android")
+                            }
                         }
                     }
                 }
@@ -639,6 +765,132 @@ private fun MenuActionRow(
                 text = emoji,
                 fontSize = 18.sp
             )
+        }
+    }
+}
+
+@Composable
+private fun PlayPauseButton(
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null
+            ) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        if (isPlaying) {
+            Canvas(modifier = Modifier.size(24.dp)) {
+                val barWidth = size.width * 0.18f
+                val gap = size.width * 0.22f
+                val h = size.height * 0.55f
+                val startY = size.height * 0.225f
+                
+                // Left bar
+                drawRect(
+                    color = Color.White,
+                    topLeft = Offset(size.width * 0.26f, startY),
+                    size = Size(barWidth, h)
+                )
+                // Right bar
+                drawRect(
+                    color = Color.White,
+                    topLeft = Offset(size.width * 0.26f + barWidth + gap, startY),
+                    size = Size(barWidth, h)
+                )
+            }
+        } else {
+            Canvas(modifier = Modifier.size(24.dp)) {
+                val path = Path().apply {
+                    moveTo(size.width * 0.32f, size.height * 0.22f)
+                    lineTo(size.width * 0.82f, size.height * 0.5f)
+                    lineTo(size.width * 0.32f, size.height * 0.78f)
+                    close()
+                }
+                drawPath(path, color = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SkipNextButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null
+            ) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(24.dp)) {
+            val path = Path().apply {
+                moveTo(size.width * 0.22f, size.height * 0.24f)
+                lineTo(size.width * 0.64f, size.height * 0.5f)
+                lineTo(size.width * 0.22f, size.height * 0.76f)
+                close()
+            }
+            drawPath(path, color = Color.White)
+            
+            drawRect(
+                color = Color.White,
+                topLeft = Offset(size.width * 0.69f, size.height * 0.24f),
+                size = Size(size.width * 0.12f, size.height * 0.52f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlbumArtView(
+    bitmap: android.graphics.Bitmap?,
+    startColorHex: String?,
+    endColorHex: String?,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(12.dp))
+            .background(Color(0xFF181A19), RoundedCornerShape(12.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "Album Art",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            val startColor = startColorHex?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: Color(0xFF2C3E50)
+            val endColor = endColorHex?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: Color(0xFF101010)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(startColor, endColor)
+                        ),
+                        RoundedCornerShape(12.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "🎵",
+                    fontSize = 42.sp
+                )
+            }
         }
     }
 }

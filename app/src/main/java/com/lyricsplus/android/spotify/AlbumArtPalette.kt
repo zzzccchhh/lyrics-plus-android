@@ -2,57 +2,92 @@ package com.lyricsplus.android.spotify
 
 import android.graphics.Bitmap
 import android.graphics.Color
-import kotlin.math.roundToInt
+import androidx.palette.graphics.Palette
 
 data class AlbumArtPalette(
     val start: String,
-    val end: String
+    val end: String,
+    val accent: String
 )
 
 object AlbumArtPaletteExtractor {
     fun fromBitmap(bitmap: Bitmap?): AlbumArtPalette? {
-        if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0) return null
+        return extractTemplates(bitmap).firstOrNull()
+    }
 
-        var red = 0L
-        var green = 0L
-        var blue = 0L
-        var count = 0L
-        val stepX = (bitmap.width / 32).coerceAtLeast(1)
-        val stepY = (bitmap.height / 32).coerceAtLeast(1)
+    fun extractTemplates(bitmap: Bitmap?): List<AlbumArtPalette> {
+        if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0) return emptyList()
 
-        var y = 0
-        while (y < bitmap.height) {
-            var x = 0
-            while (x < bitmap.width) {
-                val color = bitmap.getPixel(x, y)
-                if (Color.alpha(color) > 24) {
-                    red += Color.red(color)
-                    green += Color.green(color)
-                    blue += Color.blue(color)
-                    count += 1
-                }
-                x += stepX
-            }
-            y += stepY
+        val palette = try {
+            Palette.from(bitmap).generate()
+        } catch (e: Exception) {
+            return emptyList()
         }
 
-        if (count == 0L) return null
+        val vibrant = palette.vibrantSwatch
+        val darkVibrant = palette.darkVibrantSwatch
+        val lightVibrant = palette.lightVibrantSwatch
+        val muted = palette.mutedSwatch
+        val darkMuted = palette.darkMutedSwatch
+        val lightMuted = palette.lightMutedSwatch
+        val dominant = palette.dominantSwatch
 
-        val base = Color.rgb((red / count).toInt(), (green / count).toInt(), (blue / count).toInt())
-        return AlbumArtPalette(
-            start = base.toAdjustedHex(saturation = 1.28f, value = 1.08f),
-            end = base.toAdjustedHex(saturation = 1.08f, value = 0.34f)
+        // Fallbacks hierarchy
+        val dominantRgb = dominant?.rgb ?: vibrant?.rgb ?: Color.parseColor("#181A19")
+        val vibrantRgb = vibrant?.rgb ?: dominantRgb
+        val darkVibrantRgb = darkVibrant?.rgb ?: darkMuted?.rgb ?: dominantRgb
+        val lightVibrantRgb = lightVibrant?.rgb ?: vibrantRgb
+        val mutedRgb = muted?.rgb ?: vibrantRgb
+        val darkMutedRgb = darkMuted?.rgb ?: darkVibrantRgb
+        val lightMutedRgb = lightMuted?.rgb ?: mutedRgb
+
+        // Create the 5 different visual styles
+        // Template 1: Vibrant Blend (默认流光 - High energy, colorful)
+        val vibrantStart = vibrantRgb.toAdjustedHex(saturation = 1.10f, value = 0.65f)
+        val vibrantEnd = darkMutedRgb.toAdjustedHex(saturation = 0.80f, value = 0.24f)
+        val vibrantAccent = lightVibrantRgb.toAdjustedHex(saturation = 1.20f, value = 0.75f)
+        val vibrantTemplate = AlbumArtPalette(vibrantStart, vibrantEnd, vibrantAccent)
+
+        // Template 2: Deep & Chill (深邃夜色 - Low brightness, nocturnal mood)
+        val deepStart = darkVibrantRgb.toAdjustedHex(saturation = 0.90f, value = 0.35f)
+        val deepEnd = darkMutedRgb.toAdjustedHex(saturation = 0.80f, value = 0.16f)
+        val deepAccent = mutedRgb.toAdjustedHex(saturation = 1.00f, value = 0.50f)
+        val deepTemplate = AlbumArtPalette(deepStart, deepEnd, deepAccent)
+
+        // Template 3: Soft Muted (柔和浅雅 - Morandi pastels, subtle)
+        val softStart = mutedRgb.toAdjustedHex(saturation = 0.80f, value = 0.50f)
+        val softEnd = darkMutedRgb.toAdjustedHex(saturation = 0.80f, value = 0.22f)
+        val softAccent = lightMutedRgb.toAdjustedHex(saturation = 0.90f, value = 0.60f)
+        val softTemplate = AlbumArtPalette(softStart, softEnd, softAccent)
+
+        // Template 4: Neon Contrast (电音霓虹 - Bold dynamic mix)
+        val neonStart = lightVibrantRgb.toAdjustedHex(saturation = 1.20f, value = 0.68f)
+        val neonEnd = darkVibrantRgb.toAdjustedHex(saturation = 1.00f, value = 0.22f)
+        val neonAccent = vibrantRgb.toAdjustedHex(saturation = 1.30f, value = 0.78f)
+        val neonTemplate = AlbumArtPalette(neonStart, neonEnd, neonAccent)
+
+        // Template 5: Dominant Mono (主导单色 - Unified monochrome feel)
+        val monoStart = dominantRgb.toAdjustedHex(saturation = 1.10f, value = 0.55f)
+        val monoEnd = dominantRgb.toAdjustedHex(saturation = 0.80f, value = 0.18f)
+        val monoAccent = dominantRgb.toAdjustedHex(saturation = 1.20f, value = 0.78f, hueShift = 30f)
+        val monoTemplate = AlbumArtPalette(monoStart, monoEnd, monoAccent)
+
+        return listOf(
+            vibrantTemplate,
+            deepTemplate,
+            softTemplate,
+            neonTemplate,
+            monoTemplate
         )
     }
 
-    private fun Int.toAdjustedHex(saturation: Float, value: Float): String {
+    private fun Int.toAdjustedHex(saturation: Float, value: Float, hueShift: Float = 0f): String {
         val hsv = FloatArray(3)
         Color.colorToHSV(this, hsv)
+        hsv[0] = (hsv[0] + hueShift + 360f) % 360f
         hsv[1] = (hsv[1] * saturation).coerceIn(0.32f, 0.92f)
         hsv[2] = (hsv[2] * value).coerceIn(0.16f, 0.86f)
-        return Color.HSVToColor(hsv).toHex()
+        val color = Color.HSVToColor(hsv)
+        return "#%02X%02X%02X".format(Color.red(color), Color.green(color), Color.blue(color))
     }
-
-    private fun Int.toHex(): String =
-        "#%02X%02X%02X".format(Color.red(this), Color.green(this), Color.blue(this))
 }

@@ -18,7 +18,6 @@
     lyrics: [],
     activeIndex: -1,
     showRomaji: true,
-    animationRunning: false,
     isFullLyricsMode: false
   };
 
@@ -27,6 +26,8 @@
     isPlaying: false,
     updatedAt: 0
   };
+
+  var prevActiveIndex = -1;
 
   function report(message) {
     try {
@@ -62,7 +63,7 @@
       var seed = String((track && track.track) || "") + String((track && track.artist) || "");
       var startColor = (track && track.backgroundStart) || hashColor(seed || "lyrics", 68, 48);
       var endColor = (track && track.backgroundEnd) || hashColor(seed + " deep", 42, 24);
-      var accentColor = hashColor(seed + " accent", 74, 62);
+      var accentColor = (track && track.backgroundAccent) || hashColor(seed + " accent", 74, 62);
       state.track = track || null;
       trackTitleEl.textContent = (track && track.track) || "Lyrics Plus";
       trackArtistEl.textContent = (track && track.artist) || "Waiting for Spotify";
@@ -102,6 +103,7 @@
       if (state.isFullLyricsMode) {
         getScrollContainer().scrollTop = 0;
       }
+      prevActiveIndex = -1;
       // Full rebuild: new lyrics data means new DOM
       renderFull();
       report("lyrics: " + state.lyrics.length + ", active: " + state.activeIndex);
@@ -115,18 +117,14 @@
       playback.positionMs = Number(positionMs) || 0;
       playback.isPlaying = !!isPlaying;
       playback.updatedAt = performance.now();
+      if (playback.isPlaying) {
+        stageEl.classList.remove("paused");
+      } else {
+        stageEl.classList.add("paused");
+      }
       updatePlaybackPosition();
     } catch (error) {
       report("error:setPlaybackState:" + error.message);
-    }
-  }
-
-  function setAnimationDuration(seconds) {
-    try {
-      stageEl.style.setProperty("--flow-duration", Number(seconds) + "s");
-      report("setAnimationDuration: " + seconds + "s");
-    } catch (error) {
-      report("error:setAnimationDuration:" + error.message);
     }
   }
 
@@ -141,21 +139,35 @@
     }
   }
 
-  function setAnimationPlayState(running) {
+  var _isRightAligned = false;
+
+  function setRightAligned(rightAligned) {
     try {
-      state.animationRunning = !!running;
-      if (state.animationRunning) {
-        stageEl.classList.remove("animation-paused");
-        stageEl.classList.add("animation-running");
+      var changed = _isRightAligned !== !!rightAligned;
+      _isRightAligned = !!rightAligned;
+      if (rightAligned) {
+        stageEl.classList.add("right-aligned");
       } else {
-        stageEl.classList.remove("animation-running");
-        stageEl.classList.add("animation-paused");
+        stageEl.classList.remove("right-aligned");
       }
-      report("setAnimationPlayState: " + (running ? "running" : "paused"));
+      // On orientation change, fully rebuild DOM so line visibility is correct
+      if (changed && state.lyrics.length > 0) {
+        prevActiveIndex = -1;
+        // Disable transition to prevent jarring animation
+        lyricsEl.style.transition = "none";
+        renderFull();
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            lyricsEl.style.transition = "";
+          });
+        });
+      }
+      report("setRightAligned: " + rightAligned);
     } catch (error) {
-      report("error:setAnimationPlayState:" + error.message);
+      report("error:setRightAligned:" + error.message);
     }
   }
+
 
   function updatePlaybackPosition() {
     if (!state.lyrics.length) return;
@@ -207,12 +219,11 @@
   function getDistanceStyle(distance) {
     // Past lines: fully hidden (no blur bar needed)
     if (distance < 0) {
-      return "opacity:0;filter:blur(4px);transform:scale(0.78)";
+      return "opacity:0;transform:scale(0.78)";
     }
     var scale = distance === 0 ? 1 : Math.abs(distance) === 1 ? 0.88 : 0.78;
     var opacity = distance === 0 ? 1 : Math.abs(distance) === 1 ? 0.55 : 0.25;
-    var blur = distance === 0 ? 0 : Math.abs(distance) === 1 ? 1.5 : 4;
-    return "opacity:" + opacity + ";filter:blur(" + blur + "px);transform:scale(" + scale + ")";
+    return "opacity:" + opacity + ";transform:scale(" + scale + ")";
   }
 
   function getKindClass(distance) {
@@ -264,14 +275,27 @@
    */
   function patchFocusedMode() {
     var active = clampedActiveIndex();
+    var prevActive = prevActiveIndex;
+    prevActiveIndex = active;
     state.activeIndex = active;
 
     var lines = lyricsEl.querySelectorAll(".line");
     if (!lines.length) return;
 
+    var isSeek = prevActive === -1 || Math.abs(active - prevActive) > 3;
+
     for (var i = 0; i < lines.length; i += 1) {
-      var el = lines[i];
       var distance = i - active;
+
+      if (!isSeek) {
+        var prevDistance = i - prevActive;
+        // Skip updating far past and far future elements that didn't change state
+        if ((prevDistance > 1 && distance > 1) || (prevDistance < 0 && distance < 0)) {
+          continue;
+        }
+      }
+
+      var el = lines[i];
       var kind = getKindClass(distance);
       var direction = getDirectionClass(distance);
 
@@ -315,12 +339,14 @@
     }
 
     // Smoothly move the container so the active line stays at the anchor position
+    // In right-aligned mode, CSS flex centering handles positioning
     requestAnimationFrame(function () {
-      if (lines[active]) {
+      if (!_isRightAligned && lines[active]) {
         var activeLine = lines[active];
         var offset = activeLine.offsetTop;
         lyricsEl.style.transform = "translateY(-" + offset + "px)";
       }
+      fitFocusedFontSize();
     });
   }
 
@@ -369,13 +395,17 @@
       if (lines[active]) {
         var activeLine = lines[active];
         var offset = activeLine.offsetTop;
-        if (!state.isFullLyricsMode) {
-          lyricsEl.style.transform = "translateY(-" + offset + "px)";
-        } else {
+        if (state.isFullLyricsMode) {
           lyricsEl.style.transform = "none";
           scrollToActiveIfNeeded(activeLine);
+        } else if (_isRightAligned) {
+          // CSS flex centering handles positioning in right-aligned focused mode
+          lyricsEl.style.transform = "none";
+        } else {
+          lyricsEl.style.transform = "translateY(-" + offset + "px)";
         }
       }
+      fitFocusedFontSize();
     });
 
     report("render: active=" + active + " total=" + state.lyrics.length);
@@ -413,6 +443,51 @@
     }
   }
 
+  // ---------- Dynamic font sizing for focused right-aligned mode ----------
+  // Binary-searches for the largest text font-size that makes
+  // romaji + text + translation fit within the available content area.
+  function fitFocusedFontSize() {
+    if (!_isRightAligned || state.isFullLyricsMode) return;
+    var activeLine = lyricsEl.querySelector(".line.active");
+    if (!activeLine) return;
+
+    // clientHeight includes padding; subtract it to get the actual safe content area
+    var cs = getComputedStyle(lyricsEl);
+    var padTop = parseFloat(cs.paddingTop) || 0;
+    var padBottom = parseFloat(cs.paddingBottom) || 0;
+    var available = lyricsEl.clientHeight - padTop - padBottom;
+    if (available <= 0) available = window.innerHeight * 0.8;
+    var target = available * 0.95;
+
+    var lo = 12, hi = 60;
+    var bestBase = lo;
+
+    // Quick binary search (6 iterations → precision < 1px)
+    for (var iter = 0; iter < 6; iter++) {
+      var mid = (lo + hi) / 2;
+      applyFocusedSizes(mid);
+      var h = activeLine.scrollHeight;
+      if (h <= target) {
+        bestBase = mid;
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+
+    applyFocusedSizes(bestBase);
+    report("fitFocusedFontSize: base=" + Math.round(bestBase) + "px, available=" + Math.round(available) + ", pad=" + Math.round(padTop));
+  }
+
+  function applyFocusedSizes(base) {
+    var textPx = Math.round(base) + "px";
+    var transPx = Math.round(base * 0.62) + "px";
+    var romajiPx = Math.round(base * 0.42) + "px";
+    stageEl.style.setProperty("--focused-text-size", textPx);
+    stageEl.style.setProperty("--focused-trans-size", transPx);
+    stageEl.style.setProperty("--focused-romaji-size", romajiPx);
+  }
+
 
 
 
@@ -420,9 +495,8 @@
     setTrack: setTrack,
     setLyrics: setLyrics,
     setPlaybackState: setPlaybackState,
-    setAnimationDuration: setAnimationDuration,
     setShowRomaji: setShowRomaji,
-    setAnimationPlayState: setAnimationPlayState
+    setRightAligned: setRightAligned
   };
 
   window.onerror = function (message, source, line) {
@@ -477,9 +551,8 @@
     setTrack: setTrack,
     setLyrics: setLyrics,
     setPlaybackState: setPlaybackState,
-    setAnimationDuration: setAnimationDuration,
     setShowRomaji: setShowRomaji,
-    setAnimationPlayState: setAnimationPlayState
+    setRightAligned: setRightAligned
   };
 
   window.onerror = function (message, source, line) {
@@ -493,8 +566,38 @@
     }
   });
 
+  // Re-calculate layout and scroll offsets on window resize (rotation / unfolding)
+  window.addEventListener("resize", function () {
+    try {
+      if (state.lyrics.length > 0) {
+        if (!state.isFullLyricsMode) {
+          // In focused mode, do a full re-render so line visibility/sizing is correct
+          prevActiveIndex = -1;
+          lyricsEl.style.transition = "none";
+          renderFull();
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              lyricsEl.style.transition = "";
+            });
+          });
+        } else {
+          // In full-lyrics-mode, just re-scroll to active line
+          var active = clampedActiveIndex();
+          var lines = lyricsEl.querySelectorAll(".line");
+          if (lines[active]) {
+            scrollToActiveIfNeeded(lines[active]);
+          }
+        }
+      }
+      report("resize event handled");
+    } catch (error) {
+      report("error:resizeListener:" + error.message);
+    }
+  });
+
   function toggleFullLyricsMode() {
     state.isFullLyricsMode = !state.isFullLyricsMode;
+    prevActiveIndex = -1;
     if (state.isFullLyricsMode) {
       userScrolling = false; // Reset scroll-pause state on enter
       stageEl.classList.add("full-lyrics-mode");

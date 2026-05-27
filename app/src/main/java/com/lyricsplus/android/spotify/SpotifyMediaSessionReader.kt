@@ -43,10 +43,10 @@ class SpotifyMediaSessionReader(private val context: Context) {
         val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
         val album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty()
         val durationMs = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
-        val palette = AlbumArtPaletteExtractor.fromBitmap(
-            metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-                ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
-        )
+        val bitmap = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+            ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        val templates = AlbumArtPaletteExtractor.extractTemplates(bitmap)
+        val palette = templates.firstOrNull()
         if (title.isBlank() && artist.isBlank()) return null
 
         return NowPlaying(
@@ -55,7 +55,11 @@ class SpotifyMediaSessionReader(private val context: Context) {
             album = album,
             durationSeconds = ((durationMs + 500) / 1000).toInt(),
             backgroundStart = palette?.start,
-            backgroundEnd = palette?.end
+            backgroundEnd = palette?.end,
+            backgroundAccent = palette?.accent,
+            albumArt = bitmap,
+            colorStyleIndex = 0,
+            paletteTemplates = templates
         )
     }
 

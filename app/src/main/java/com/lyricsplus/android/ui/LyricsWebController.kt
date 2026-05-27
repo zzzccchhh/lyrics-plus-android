@@ -82,14 +82,18 @@ class LyricsWebController(context: Context) {
         loadUrl("file:///android_asset/lyrics-web/index.html")
     }
 
-    fun pushTrackAndLyrics(track: NowPlaying, lyrics: List<LyricsLine>, positionMs: Long, isPlaying: Boolean) {
+    fun pushTrack(track: NowPlaying) {
         if (!isReady) return
         val trackJson = track.toJson().toString()
-        val lyricsJson = lyrics.toJson().toString()
-        Log.d(WebLogTag, "push track=${track.track} artist=${track.artist} lyrics=${lyrics.size} jsonBytes=${lyricsJson.length}")
+        Log.d(WebLogTag, "push track=${track.track} artist=${track.artist}")
         webView.evaluateJavascript("window.LyricsPlus.setTrack($trackJson)", ::logJsResult)
+    }
+
+    fun pushLyrics(lyrics: List<LyricsLine>) {
+        if (!isReady) return
+        val lyricsJson = lyrics.toJson().toString()
+        Log.d(WebLogTag, "push lyrics count=${lyrics.size}")
         webView.evaluateJavascript("window.LyricsPlus.setLyrics($lyricsJson)", ::logJsResult)
-        pushPlayback(positionMs, isPlaying)
     }
 
     fun pushPlayback(positionMs: Long, isPlaying: Boolean) {
@@ -102,14 +106,9 @@ class LyricsWebController(context: Context) {
         webView.evaluateJavascript("window.LyricsPlus.setShowRomaji($show)", null)
     }
 
-    fun pushAnimationDuration(seconds: Int) {
+    fun pushRightAligned(rightAligned: Boolean) {
         if (!isReady) return
-        webView.evaluateJavascript("window.LyricsPlus.setAnimationDuration($seconds)", null)
-    }
-
-    fun pushAnimationPlayState(running: Boolean) {
-        if (!isReady) return
-        webView.evaluateJavascript("window.LyricsPlus.setAnimationPlayState($running)", null)
+        webView.evaluateJavascript("window.LyricsPlus.setRightAligned($rightAligned)", null)
     }
 
     private fun pushStatusBarHeight() {
@@ -131,6 +130,20 @@ class LyricsWebController(context: Context) {
         Log.d(WebLogTag, "headerBottom=${heightDp}dp")
         webView.evaluateJavascript(
             "document.getElementById('stage').style.setProperty('--header-bottom', '${heightDp}px')",
+            null
+        )
+    }
+
+    fun pushSafeInsets(topDp: Int, rightDp: Int, bottomDp: Int, leftDp: Int) {
+        if (!isReady) return
+        Log.d(WebLogTag, "safeInsets top=$topDp right=$rightDp bottom=$bottomDp left=$leftDp")
+        webView.evaluateJavascript(
+            "(function(){var s=document.getElementById('stage').style;" +
+            "s.setProperty('--safe-top','${topDp}px');" +
+            "s.setProperty('--safe-right','${rightDp}px');" +
+            "s.setProperty('--safe-bottom','${bottomDp}px');" +
+            "s.setProperty('--safe-left','${leftDp}px');" +
+            "s.setProperty('--status-bar-height','${topDp}px');})()",
             null
         )
     }
@@ -179,6 +192,7 @@ private fun NowPlaying.toJson(): JSONObject =
         .put("durationSeconds", durationSeconds)
         .put("backgroundStart", backgroundStart)
         .put("backgroundEnd", backgroundEnd)
+        .put("backgroundAccent", backgroundAccent)
 
 private fun List<LyricsLine>.toJson(): JSONArray =
     JSONArray().also { array ->

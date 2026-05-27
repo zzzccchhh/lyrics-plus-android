@@ -31,9 +31,8 @@ data class LyricsUiState(
     val lastBroadcastAction: String? = null,
     val playbackSource: String = "none",
     val lyricsOffsetMs: Long = 0L,
-    val animationDuration: Int = 45,
     val showRomaji: Boolean = true,
-    val animationRunning: Boolean = false
+    val keepScreenOn: Boolean = false
 )
 
 class MainViewModel(
@@ -252,8 +251,12 @@ class MainViewModel(
     private fun NowPlaying.withPaletteFallback(previous: NowPlaying): NowPlaying =
         if (requestKey() == previous.requestKey()) {
             copy(
-                backgroundStart = backgroundStart ?: previous.backgroundStart,
-                backgroundEnd = backgroundEnd ?: previous.backgroundEnd
+                backgroundStart = previous.backgroundStart ?: backgroundStart,
+                backgroundEnd = previous.backgroundEnd ?: backgroundEnd,
+                backgroundAccent = previous.backgroundAccent ?: backgroundAccent,
+                albumArt = previous.albumArt ?: albumArt,
+                colorStyleIndex = previous.colorStyleIndex,
+                paletteTemplates = previous.paletteTemplates.ifEmpty { paletteTemplates }
             )
         } else {
             this
@@ -263,32 +266,143 @@ class MainViewModel(
         _uiState.update { it.copy(lyricsOffsetMs = it.lyricsOffsetMs + deltaMs) }
     }
 
-    fun adjustAnimationSpeed(deltaSeconds: Int) {
-        _uiState.update {
-            val next = (it.animationDuration + deltaSeconds).coerceIn(10, 120)
-            it.copy(animationDuration = next)
-        }
-    }
-
     fun toggleRomaji() {
         _uiState.update { it.copy(showRomaji = !it.showRomaji) }
     }
 
-    fun forceSyncTime() {
-        viewModelScope.launch {
-            val snapshot = com.lyricsplus.android.spotify.LyricsNotificationListenerService.snapshotFlow.value
-            if (snapshot != null) {
-                _uiState.update { it.copy(lyricsOffsetMs = 0L) }
-                onMediaSnapshot(snapshot)
-                android.widget.Toast.makeText(getApplication(), "歌词时间已同步重置", android.widget.Toast.LENGTH_SHORT).show()
-            } else {
-                android.widget.Toast.makeText(getApplication(), "无法同步：未找到活动的媒体会话", android.widget.Toast.LENGTH_SHORT).show()
+    fun toggleKeepScreenOn() {
+        _uiState.update { it.copy(keepScreenOn = !it.keepScreenOn) }
+    }
+
+    fun checkForUpdates() {
+        val currentVersion = "1.0.0"
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                android.widget.Toast.makeText(getApplication(), "正在检查更新...", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            val client = okhttp3.OkHttpClient()
+            val request = okhttp3.Request.Builder()
+                .url("https://api.github.com/repos/Artriai/lyrics-plus-android/releases/latest")
+                .header("User-Agent", "lyrics-plus-android")
+                .build()
+            runCatching {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw java.io.IOException("Unexpected HTTP code $response")
+                    val body = response.body?.string().orEmpty()
+                    val tagRegex = "\"tag_name\"\\s*:\\s*\"([^\"]+)\"".toRegex()
+                    val matchResult = tagRegex.find(body)
+                    val latestVersionWithV = matchResult?.groupValues?.get(1)
+                    if (latestVersionWithV != null) {
+                        val latestVersion = latestVersionWithV.trimStart('v', 'V')
+                        val isNewer = isVersionNewer(latestVersion, currentVersion)
+                        val htmlUrlRegex = "\"html_url\"\\s*:\\s*\"([^\"]+)\"".toRegex()
+                        val htmlUrlMatch = htmlUrlRegex.find(body)
+                        val htmlUrl = htmlUrlMatch?.groupValues?.get(1) ?: "https://github.com/Artriai/lyrics-plus-android/releases"
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            if (isNewer) {
+                                android.widget.Toast.makeText(getApplication(), "发现新版本: v$latestVersion！即将前往下载...", android.widget.Toast.LENGTH_LONG).show()
+                                kotlinx.coroutines.delay(1500)
+                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(htmlUrl)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                getApplication<Application>().startActivity(intent)
+                            } else {
+                                android.widget.Toast.makeText(getApplication(), "已是最新版本 (当前版本: v$currentVersion)", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    } else {
+                        throw java.io.IOException("无法解析服务器返回的版本信息")
+                    }
+                }
+            }.onFailure { error ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(getApplication(), "检查更新失败: ${error.message}", android.widget.Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
 
-    fun toggleAnimation() {
-        _uiState.update { it.copy(animationRunning = !it.animationRunning) }
+    private fun isVersionNewer(latest: String, current: String): Boolean {
+        return runCatching {
+            val latestParts = latest.split(".").map { it.toInt() }
+            val currentParts = current.split(".").map { it.toInt() }
+            for (i in 0 until maxOf(latestParts.size, currentParts.size)) {
+                val latestPart = latestParts.getOrElse(i) { 0 }
+                val currentPart = currentParts.getOrElse(i) { 0 }
+                if (latestPart > currentPart) return true
+                if (latestPart < currentPart) return false
+            }
+            false
+        }.getOrDefault(latest != current)
+    }
+
+    fun forceSyncTime() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val reader = com.lyricsplus.android.spotify.SpotifyMediaSessionReader(getApplication())
+            val snapshot = reader.readSnapshot()
+            if (snapshot != null) {
+                _uiState.update { it.copy(lyricsOffsetMs = 0L) }
+                onMediaSnapshot(snapshot)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(getApplication(), "歌词时间已同步重置", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(getApplication(), "无法同步：未找到活动的媒体会话", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    fun rotatePaletteColors() {
+        _uiState.update { state ->
+            val nowPlaying = state.nowPlaying
+            if (nowPlaying.paletteTemplates.isNotEmpty()) {
+                val nextIndex = (nowPlaying.colorStyleIndex + 1) % nowPlaying.paletteTemplates.size
+                val nextPalette = nowPlaying.paletteTemplates[nextIndex]
+                state.copy(
+                    nowPlaying = nowPlaying.copy(
+                        colorStyleIndex = nextIndex,
+                        backgroundStart = nextPalette.start,
+                        backgroundEnd = nextPalette.end,
+                        backgroundAccent = nextPalette.accent
+                    )
+                )
+            } else {
+                val start = nowPlaying.backgroundStart
+                val end = nowPlaying.backgroundEnd
+                val accent = nowPlaying.backgroundAccent
+                if (start != null && end != null) {
+                    val nextStart = start.shiftColorHue(120f)
+                    val nextEnd = end.shiftColorHue(120f)
+                    val nextAccent = accent?.shiftColorHue(120f) ?: nextStart.shiftColorHue(60f)
+                    state.copy(
+                        nowPlaying = nowPlaying.copy(
+                            backgroundStart = nextStart,
+                            backgroundEnd = nextEnd,
+                            backgroundAccent = nextAccent
+                        )
+                    )
+                } else {
+                    state
+                }
+            }
+        }
+    }
+
+    private fun String.shiftColorHue(degrees: Float): String {
+        return runCatching {
+            val color = android.graphics.Color.parseColor(this)
+            val hsv = FloatArray(3)
+            android.graphics.Color.colorToHSV(color, hsv)
+            hsv[0] = (hsv[0] + degrees + 360f) % 360f
+            val nextColor = android.graphics.Color.HSVToColor(hsv)
+            "#%02X%02X%02X".format(
+                android.graphics.Color.red(nextColor),
+                android.graphics.Color.green(nextColor),
+                android.graphics.Color.blue(nextColor)
+            )
+        }.getOrDefault(this)
     }
 
     private fun getSpotifyController(): MediaController? {
@@ -320,6 +434,16 @@ class MainViewModel(
             controller.transportControls.skipToNext()
         } else {
             android.widget.Toast.makeText(getApplication(), "无法控制：请确保已启动 Spotify", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun syncNow() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val reader = com.lyricsplus.android.spotify.SpotifyMediaSessionReader(getApplication())
+            val snapshot = reader.readSnapshot()
+            if (snapshot != null) {
+                com.lyricsplus.android.spotify.LyricsNotificationListenerService.latestSnapshot = snapshot
+            }
         }
     }
 }

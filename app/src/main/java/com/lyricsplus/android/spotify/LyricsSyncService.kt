@@ -54,7 +54,6 @@ class LyricsSyncService : Service() {
             ContextCompat.RECEIVER_EXPORTED
         )
         
-        startSyncLoop()
         Log.d("LyricsSyncService", "Foreground service started and registered receiver.")
     }
 
@@ -75,15 +74,6 @@ class LyricsSyncService : Service() {
         val snapshot = mediaSessionReader.readSnapshot()
         if (snapshot != null) {
             LyricsNotificationListenerService.latestSnapshot = snapshot
-        }
-    }
-
-    private fun startSyncLoop() {
-        scope.launch {
-            while (true) {
-                syncMediaSession()
-                delay(1200)
-            }
         }
     }
 

@@ -52,10 +52,9 @@ class LyricsNotificationListenerService : NotificationListenerService() {
             ?: ""
         val album = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty()
         val durationMs = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
-        val palette = AlbumArtPaletteExtractor.fromBitmap(
-            metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-                ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
-        )
+        val bitmap = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+            ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        val palette = AlbumArtPaletteExtractor.fromBitmap(bitmap)
 
         return SpotifyMediaSnapshot(
             nowPlaying = if (title.isNotBlank() || artist.isNotBlank()) {
@@ -65,7 +64,9 @@ class LyricsNotificationListenerService : NotificationListenerService() {
                     album = album,
                     durationSeconds = ((durationMs + 500) / 1000).toInt(),
                     backgroundStart = palette?.start,
-                    backgroundEnd = palette?.end
+                    backgroundEnd = palette?.end,
+                    backgroundAccent = palette?.accent,
+                    albumArt = bitmap
                 )
             } else {
                 null

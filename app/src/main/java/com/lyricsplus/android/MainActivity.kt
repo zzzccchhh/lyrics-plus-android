@@ -14,6 +14,7 @@ import com.lyricsplus.android.spotify.SpotifyBroadcasts
 import com.lyricsplus.android.spotify.LyricsSyncService
 import com.lyricsplus.android.ui.LyricsPlusApp
 import com.lyricsplus.android.ui.LyricsWebController
+import androidx.activity.enableEdgeToEdge
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
@@ -21,6 +22,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Edge-to-edge: let the app render behind system bars and cutouts
+        // so Compose and WebView can handle safe area insets themselves.
+        enableEdgeToEdge()
 
         webController = LyricsWebController(this)
 
@@ -49,6 +54,11 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         val intent = Intent(this, LyricsSyncService::class.java)
         ContextCompat.startForegroundService(this, intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.syncNow()
     }
 
     private fun openSpotify() {

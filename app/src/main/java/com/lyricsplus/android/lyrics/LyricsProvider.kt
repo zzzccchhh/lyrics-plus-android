@@ -3,6 +3,8 @@ package com.lyricsplus.android.lyrics
 import android.content.Context
 import com.lyricsplus.android.data.LyricsLine
 import com.lyricsplus.android.data.NowPlaying
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class LyricsProvider(
     context: Context,
@@ -12,12 +14,16 @@ class LyricsProvider(
 ) {
     private val cacheDb = LyricsCacheDatabase(context)
 
+    init {
+        HttpClient.initialize(context)
+    }
+
     fun preWarm() {
         japaneseReader.preWarm()
     }
 
-    suspend fun findSyncedLyrics(track: NowPlaying): Result<List<LyricsLine>> {
-        return runCatching {
+    suspend fun findSyncedLyrics(track: NowPlaying): Result<List<LyricsLine>> = withContext(Dispatchers.IO) {
+        runCatching {
             val trackKey = listOf(track.track, track.artist, track.album, track.durationSeconds).joinToString("|")
             val cached = cacheDb.getLyrics(trackKey)
             if (cached != null) {
@@ -25,13 +31,20 @@ class LyricsProvider(
             }
 
             val netease = neteaseClient.findSyncedLyrics(track)
-            val base = netease.getOrElse {
-                lrclibClient.findSyncedLyrics(track).getOrElse {
-                    // Both APIs failed — cache an instrumental placeholder
-                    // so we don't re-fetch every time
-                    val instrumental = listOf(LyricsLine(0L, "纯音乐 / 无歌词"))
-                    cacheDb.saveLyrics(trackKey, instrumental)
-                    return@runCatching instrumental
+            val base = netease.getOrElse { neteaseErr ->
+                val lrclib = lrclibClient.findSyncedLyrics(track)
+                lrclib.getOrElse { lrclibErr ->
+                    // Both APIs failed. Check if either failure was due to network anomalies (IOException)
+                    if (neteaseErr is java.io.IOException || lrclibErr is java.io.IOException) {
+                        // Network error! Throw the exception instead of caching an instrumental placeholder
+                        throw neteaseErr ?: lrclibErr
+                    } else {
+                        // Both completed search requests but logically returned no results.
+                        // Cache this genuine "no lyrics" state so we don't spam the servers.
+                        val instrumental = listOf(LyricsLine(0L, "纯音乐 / 无歌词"))
+                        cacheDb.saveLyrics(trackKey, instrumental)
+                        return@runCatching instrumental
+                    }
                 }
             }
 
