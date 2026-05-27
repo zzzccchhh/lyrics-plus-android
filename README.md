@@ -1,4 +1,4 @@
-# Lyrics Plus Android (歌词秀安卓版)
+# Lyrics Plus Android
 
 一个基于 Android 的歌词同步显示原型应用。本项目受 PC 端 Spicetify 的 **lyrics-plus** 自定义应用启发，通过监听 Spotify 的本地媒体广播，在安卓设备上实现高颜值、丝滑过渡的歌词同步滚动与特效显示。
 
