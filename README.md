@@ -9,9 +9,9 @@
 - 🎵 **多源歌词获取**：
   - 优先尝试从 **网易云音乐 (Netease)** 获取带翻译的双语同步歌词。
   - 自动回退到 **LRCLIB** 获取高质量的同步歌词。
-- 🇯🇵 **日语假名标注 (Furigana)**：
+- 🇯🇵 **日语假名标注**：
   - 内置 **Kuromoji IPADIC** 日语分析器，自动为日语歌词行上方标注罗马音，方便日语学习与跟唱。
-- 🎨 **极佳的视觉特效 (WebView 驱动)**：
+- 🎨 **极佳的视觉特效**：
   - 歌词渲染通过内置 WebView 运行的本地前端微应用（位于 `app/src/main/assets/lyrics-web`）驱动。
   - 支持类似原生 Apple Music 的歌词模糊、动态缩放、平滑滚动、平移淡入淡出及翻译和读音标注特效。
 - ⏱️ **高精度本地同步**：
@@ -44,7 +44,7 @@
 1. **直接安装（推荐）**：
    * 将编译好的 [app-release.apk](app/build/outputs/apk/release/app-release.apk) 复制到您的 Android 手机上直接安装。
 2. **自行编译**：
-   * 用 **Android Studio** 打开 `android` 目录。
+   * 用 **Android Studio** 打开项目
    * 直接运行 `app` 配置，或者在终端运行以下命令：
      ```bash
      # 编译 Debug 包
