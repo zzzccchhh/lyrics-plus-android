@@ -8,6 +8,12 @@ import com.lyricsplus.android.data.LyricsLine
 import org.json.JSONArray
 import org.json.JSONObject
 
+data class CachedLyricsResult(
+    val lyrics: List<LyricsLine>,
+    val source: String,
+    val score: Int = 100
+)
+
 class LyricsCacheDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -16,6 +22,7 @@ class LyricsCacheDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE
             CREATE TABLE $TABLE_LYRICS (
                 $COLUMN_KEY TEXT PRIMARY KEY,
                 $COLUMN_CONTENT TEXT,
+                $COLUMN_SOURCE TEXT,
                 $COLUMN_CACHED_AT INTEGER
             )
             """.trimIndent()
@@ -27,11 +34,11 @@ class LyricsCacheDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE
         onCreate(db)
     }
 
-    fun getLyrics(trackKey: String): List<LyricsLine>? {
+    fun getLyrics(trackKey: String): CachedLyricsResult? {
         val db = readableDatabase
         val cursor = db.query(
             TABLE_LYRICS,
-            arrayOf(COLUMN_CONTENT),
+            arrayOf(COLUMN_CONTENT, COLUMN_SOURCE),
             "$COLUMN_KEY = ?",
             arrayOf(trackKey),
             null, null, null
@@ -40,20 +47,27 @@ class LyricsCacheDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE
         return cursor.use {
             if (it.moveToFirst()) {
                 val jsonStr = it.getString(0)
-                runCatching { parseJson(jsonStr) }.getOrNull()
+                val source = if (!it.isNull(1)) it.getString(1) else "本地缓存"
+                val lyrics = runCatching { parseJson(jsonStr) }.getOrNull()
+                if (lyrics != null) {
+                    CachedLyricsResult(lyrics, source)
+                } else {
+                    null
+                }
             } else {
                 null
             }
         }
     }
 
-    fun saveLyrics(trackKey: String, lyrics: List<LyricsLine>) {
+    fun saveLyrics(trackKey: String, lyrics: List<LyricsLine>, source: String) {
         val db = writableDatabase
         val jsonStr = toJson(lyrics)
         
         val values = ContentValues().apply {
             put(COLUMN_KEY, trackKey)
             put(COLUMN_CONTENT, jsonStr)
+            put(COLUMN_SOURCE, source)
             put(COLUMN_CACHED_AT, System.currentTimeMillis())
         }
 
@@ -63,6 +77,23 @@ class LyricsCacheDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE
             values,
             SQLiteDatabase.CONFLICT_REPLACE
         )
+    }
+
+    fun deleteLyrics(trackKey: String) {
+        val db = writableDatabase
+        db.delete(TABLE_LYRICS, "$COLUMN_KEY = ?", arrayOf(trackKey))
+    }
+
+    fun hasLyrics(trackKey: String): Boolean {
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_LYRICS,
+            arrayOf(COLUMN_KEY),
+            "$COLUMN_KEY = ?",
+            arrayOf(trackKey),
+            null, null, null
+        )
+        return cursor.use { it.moveToFirst() }
     }
 
     private fun parseJson(jsonStr: String): List<LyricsLine> {
@@ -95,10 +126,11 @@ class LyricsCacheDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE
 
     companion object {
         private const val DATABASE_NAME = "lyrics_cache.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
         private const val TABLE_LYRICS = "cached_lyrics"
         private const val COLUMN_KEY = "track_key"
         private const val COLUMN_CONTENT = "content"
+        private const val COLUMN_SOURCE = "source"
         private const val COLUMN_CACHED_AT = "cached_at"
     }
 }

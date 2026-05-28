@@ -93,9 +93,9 @@
       }
       emptyEl.hidden = state.lyrics.length > 0;
       if (state.lyrics.length > 0) {
-        if (state.activeIndex < 0 || state.activeIndex >= state.lyrics.length) {
-          state.activeIndex = 0;
-        }
+        var elapsed = playback.isPlaying ? (performance.now() - playback.updatedAt) : 0;
+        var currentPosition = playback.positionMs + elapsed;
+        state.activeIndex = findActiveIndex(currentPosition);
       } else {
         state.activeIndex = -1;
       }

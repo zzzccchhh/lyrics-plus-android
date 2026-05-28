@@ -122,11 +122,11 @@ private fun LyricsOverlay(
     }
 
     LaunchedEffect(webController.isReady, state.lyrics) {
-        webController.pushPlayback(state.playback.positionMs + state.lyricsOffsetMs, state.playback.isPlaying)
+        webController.pushPlayback(state.playback.currentPositionMs() + state.lyricsOffsetMs, state.playback.isPlaying)
     }
 
     LaunchedEffect(webController.isReady, state.playback, state.lyricsOffsetMs) {
-        webController.pushPlayback(state.playback.positionMs + state.lyricsOffsetMs, state.playback.isPlaying)
+        webController.pushPlayback(state.playback.currentPositionMs() + state.lyricsOffsetMs, state.playback.isPlaying)
     }
 
     LaunchedEffect(webController.isReady, state.showRomaji) {
@@ -171,6 +171,17 @@ private fun LyricsOverlay(
     var isButtonVisible by remember { mutableStateOf(false) }
     var playbackButtonsShowTrigger by remember { mutableStateOf(0) }
     var headerHeightPx by remember { mutableStateOf(0) }
+    var showOverlay by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state.lyrics.isEmpty(), state.nowPlaying.track) {
+        if (state.lyrics.isEmpty()) {
+            showOverlay = false // Reset showOverlay immediately to prevent flashing stale states during cache lookup
+            delay(150) // Delay by 150ms to allow local SQLite/in-memory cache to load first
+            showOverlay = true
+        } else {
+            showOverlay = false
+        }
+    }
 
     LaunchedEffect(webController.isReady, isMultiPane, headerHeightPx) {
         if (isMultiPane) {
@@ -221,7 +232,9 @@ private fun LyricsOverlay(
             modifier = Modifier.fillMaxSize()
         )
 
-        if (state.lyrics.isEmpty()) {
+        val hasTrack = state.nowPlaying.hasTrack
+        val isInitializing = state.isInitializing
+        if (!isInitializing && (!hasTrack || (state.lyrics.isEmpty() && showOverlay))) {
             EmptyOverlay(
                 state = state,
                 onOpenSpotify = onOpenSpotify,
@@ -233,7 +246,7 @@ private fun LyricsOverlay(
                     .navigationBarsPadding()
                     .padding(28.dp)
             )
-        } else if (!webController.isReady || webController.debugMessage.startsWith("error:", ignoreCase = true)) {
+        } else if (webController.debugMessage.startsWith("error:", ignoreCase = true)) {
             DebugOverlay(
                 message = webController.debugMessage,
                 modifier = Modifier
@@ -245,7 +258,7 @@ private fun LyricsOverlay(
             )
         }
 
-        if (!webController.isReady || webController.debugMessage.startsWith("error:", ignoreCase = true)) {
+        if (webController.debugMessage.startsWith("error:", ignoreCase = true)) {
             DebugChip(
                 message = webController.debugMessage,
                 modifier = Modifier
@@ -499,6 +512,9 @@ private fun LyricsOverlay(
                                     MenuActionRow(label = "重新取色", emoji = "🎨") {
                                         viewModel.rotatePaletteColors()
                                     }
+                                    MenuActionRow(label = "切换歌词源 [当前: ${state.activeLyricsSource}]", emoji = "🎵") {
+                                        viewModel.switchLyricsSource()
+                                    }
                                 }
 
                                 Column(
@@ -544,6 +560,9 @@ private fun LyricsOverlay(
                             }
                             MenuActionRow(label = "重新取色", emoji = "🎨") {
                                 viewModel.rotatePaletteColors()
+                            }
+                            MenuActionRow(label = "切换歌词源 [当前: ${state.activeLyricsSource}]", emoji = "🎵") {
+                                viewModel.switchLyricsSource()
                             }
                             MenuActionRow(
                                 label = if (state.showRomaji) "罗马音: 开启" else "罗马音: 关闭",

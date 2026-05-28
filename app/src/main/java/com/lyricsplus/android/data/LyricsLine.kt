@@ -6,3 +6,8 @@ data class LyricsLine(
     val translation: String? = null,
     val reading: String? = null
 )
+
+data class LyricsSearchResult(
+    val lyrics: List<LyricsLine>,
+    val score: Int
+)

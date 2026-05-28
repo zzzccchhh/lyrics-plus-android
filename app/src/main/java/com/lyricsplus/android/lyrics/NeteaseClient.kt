@@ -2,6 +2,7 @@ package com.lyricsplus.android.lyrics
 
 import com.lyricsplus.android.data.LyricsLine
 import com.lyricsplus.android.data.NowPlaying
+import com.lyricsplus.android.data.LyricsSearchResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -9,22 +10,23 @@ import java.net.URLEncoder
 import kotlin.math.abs
 
 class NeteaseClient {
-    suspend fun findSyncedLyrics(track: NowPlaying): Result<List<LyricsLine>> = withContext(Dispatchers.IO) {
+    suspend fun findSyncedLyrics(track: NowPlaying): Result<LyricsSearchResult> = withContext(Dispatchers.IO) {
         runCatching {
-            val songId = searchSongId(track) ?: error("Cannot find Netease track")
-            val lyricJson = fetchLyrics(songId) ?: error("Cannot find Netease lyrics")
+            val searchResult = searchSongId(track) ?: error("Cannot find Netease track")
+            val lyricJson = fetchLyrics(searchResult.first) ?: error("Cannot find Netease lyrics")
             if (lyricJson.optBoolean("nolyric", false)) {
-                return@runCatching listOf(LyricsLine(0L, "♪ 纯音乐 ♪"))
+                return@runCatching LyricsSearchResult(listOf(LyricsLine(0L, "♪ 纯音乐 ♪")), searchResult.second)
             }
             val synced = parseNeteaseLrc(lyricJson.optJSONObject("lrc")?.optString("lyric").orEmpty())
                 .ifEmpty { error("Netease synced lyrics were empty") }
             val translation = parseNeteaseLrc(lyricJson.optJSONObject("tlyric")?.optString("lyric").orEmpty())
 
-            mergeTranslation(synced, translation)
+            val merged = mergeTranslation(synced, translation)
+            LyricsSearchResult(merged, searchResult.second)
         }
     }
 
-    private fun searchSongId(track: NowPlaying): Long? {
+    private fun searchSongId(track: NowPlaying): Pair<Long, Int>? {
         val cleanTitle = cleanTitle(track.track)
         val url = "https://music.163.com/api/cloudsearch/pc?csrf_token=&type=1&offset=0&limit=10&s=" +
             "${cleanTitle} ${track.artist}".urlEncode()
@@ -63,7 +65,6 @@ class NeteaseClient {
             }
             .filter { it.first > 0 && it.second > 0 }
             .maxByOrNull { it.second }
-            ?.first
     }
 
     private fun fetchLyrics(songId: Long): JSONObject? {

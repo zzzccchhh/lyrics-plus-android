@@ -10,11 +10,17 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.lyricsplus.android.data.NowPlaying
 import com.lyricsplus.android.data.PlaybackAnchor
+import com.lyricsplus.android.lyrics.LyricsProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class LyricsNotificationListenerService : NotificationListenerService() {
+    private val serviceScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
+    )
+
     override fun onListenerConnected() {
         super.onListenerConnected()
         refreshFromActiveNotifications()
@@ -22,13 +28,28 @@ class LyricsNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName == SpotifyBroadcasts.PACKAGE_NAME) {
-            latestSnapshot = sbn.toSpotifySnapshot()
+            val snapshot = sbn.toSpotifySnapshot()
+            latestSnapshot = snapshot
+            
+            val track = snapshot.nowPlaying
+            if (track != null && track.hasTrack) {
+                triggerBackgroundPrefetch(track)
+            }
         }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         if (sbn.packageName == SpotifyBroadcasts.PACKAGE_NAME) {
             refreshFromActiveNotifications()
+        }
+    }
+
+    private fun triggerBackgroundPrefetch(track: NowPlaying) {
+        serviceScope.launch {
+            runCatching {
+                val provider = LyricsProvider.getInstance(applicationContext)
+                provider.findSyncedLyrics(track)
+            }
         }
     }
 
