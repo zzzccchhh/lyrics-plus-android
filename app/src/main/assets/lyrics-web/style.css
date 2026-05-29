@@ -455,3 +455,65 @@ body {
   margin-bottom: 2px !important;
   line-height: 1.1 !important;
 }
+
+/* --- Upgraded Ruby Furigana Layouts --- */
+ruby {
+  ruby-align: center;
+  ruby-position: over;
+  -webkit-ruby-position: before;
+}
+
+rt {
+  font-size: 0.32em !important;
+  color: inherit;
+  opacity: 0.85;
+  user-select: none;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding-bottom: 0.12em;
+}
+
+/* --- Enhanced Syllable-Level Karaoke Highlights --- */
+.syllable {
+  display: inline-block;
+  white-space: pre;
+  color: rgba(255, 255, 255, 0.35); /* Dim inactive color */
+  transition: color 250ms ease;
+  text-shadow: none !important; /* Completely eliminate glaring shadow pop-in and glowing halos */
+}
+
+.syllable.past {
+  color: #ffffff; /* Fully highlighted active color */
+  transition: none !important; /* Eliminate flash when transitioning from active */
+}
+
+.syllable.active {
+  /* Real-time linear sweeping gradient */
+  background: linear-gradient(
+    to right,
+    #ffffff var(--progress, 0%),
+    rgba(255, 255, 255, 0.35) var(--progress, 0%)
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+  transition: none !important; /* Avoid transitioning while sweeping */
+}
+
+/* Smoothly sweep both the Kanji base text and Furigana annotations in perfect lock-step, avoiding WebKit clipping bugs */
+.syllable.active:has(ruby) {
+  background: none !important;
+  -webkit-background-clip: initial !important;
+  -webkit-text-fill-color: initial !important;
+}
+
+.syllable.active ruby,
+.syllable.active rt {
+  background: linear-gradient(
+    to right,
+    #ffffff var(--progress, 0%),
+    rgba(255, 255, 255, 0.35) var(--progress, 0%)
+  ) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}

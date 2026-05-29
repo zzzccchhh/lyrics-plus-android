@@ -4,8 +4,26 @@ import com.lyricsplus.android.data.LyricsLine
 
 object LrcParser {
     private val timestampRegex = Regex("\\[(\\d{1,2}):(\\d{2})(?:[.:](\\d{1,3}))?]")
+    private val yrcTimestampRegex = Regex("^\\[(\\d+),(\\d+)]")
 
     fun parse(lrc: String): List<LyricsLine> {
+        if (lrc.isBlank()) return emptyList()
+
+        val isYrc = lrc.lineSequence().any { yrcTimestampRegex.containsMatchIn(it) }
+
+        if (isYrc) {
+            return lrc.lineSequence()
+                .mapNotNull { rawLine ->
+                    val match = yrcTimestampRegex.find(rawLine) ?: return@mapNotNull null
+                    val startTime = match.groupValues[1].toLongOrNull() ?: return@mapNotNull null
+                    val text = rawLine.substring(match.range.last + 1).trim().ifBlank { "♪" }
+                    LyricsLine(startTime, text)
+                }
+                .sortedBy { it.startTimeMs }
+                .distinctBy { it.startTimeMs to it.text }
+                .toList()
+        }
+
         return lrc.lineSequence()
             .flatMap { rawLine ->
                 val matches = timestampRegex.findAll(rawLine).toList()

@@ -129,8 +129,8 @@ private fun LyricsOverlay(
         webController.pushPlayback(state.playback.currentPositionMs() + state.lyricsOffsetMs, state.playback.isPlaying)
     }
 
-    LaunchedEffect(webController.isReady, state.showRomaji) {
-        webController.pushRomajiState(state.showRomaji)
+    LaunchedEffect(webController.isReady, state.readingMode) {
+        webController.pushReadingMode(state.readingMode)
     }
 
     LaunchedEffect(webController.isReady, isRightAligned) {
@@ -503,17 +503,14 @@ private fun LyricsOverlay(
                                     MenuActionRow(label = "立刻同步", emoji = "🔄") {
                                         viewModel.forceSyncTime()
                                     }
+                                    MenuActionRow(label = "切换歌词源 [当前: ${state.activeLyricsSource}]", emoji = "🎵") {
+                                        viewModel.switchLyricsSource()
+                                    }
                                     MenuActionRow(label = "歌词提前 (-0.5s) [当前: $offsetText]", emoji = "🐰") {
                                         viewModel.adjustOffset(-500)
                                     }
                                     MenuActionRow(label = "歌词延时 (+0.5s) [当前: $offsetText]", emoji = "🐢") {
                                         viewModel.adjustOffset(500)
-                                    }
-                                    MenuActionRow(label = "重新取色", emoji = "🎨") {
-                                        viewModel.rotatePaletteColors()
-                                    }
-                                    MenuActionRow(label = "切换歌词源 [当前: ${state.activeLyricsSource}]", emoji = "🎵") {
-                                        viewModel.switchLyricsSource()
                                     }
                                 }
 
@@ -521,12 +518,20 @@ private fun LyricsOverlay(
                                     horizontalAlignment = Alignment.End,
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
+                                    val readingModeLabel = when (state.readingMode) {
+                                        0 -> "注音模式: 无"
+                                        1 -> "注音模式: 罗马音"
+                                        else -> "注音模式: 日文假名"
+                                    }
+                                    MenuActionRow(label = "重新取色", emoji = "🎨") {
+                                        viewModel.rotatePaletteColors()
+                                    }
                                     MenuActionRow(
-                                        label = if (state.showRomaji) "罗马音: 开启" else "罗马音: 关闭",
+                                        label = readingModeLabel,
                                         emoji = "🔤",
-                                        active = state.showRomaji
+                                        active = state.readingMode > 0
                                     ) {
-                                        viewModel.toggleRomaji()
+                                        viewModel.cycleReadingMode()
                                     }
                                     MenuActionRow(
                                         label = if (state.keepScreenOn) "屏幕常亮: 开启" else "屏幕常亮: 关闭",
@@ -534,9 +539,6 @@ private fun LyricsOverlay(
                                         active = state.keepScreenOn
                                     ) {
                                         viewModel.toggleKeepScreenOn()
-                                    }
-                                    MenuActionRow(label = "检查更新", emoji = "🚀") {
-                                        viewModel.checkForUpdates()
                                     }
                                     MenuActionRow(label = "项目地址(欢迎Star)", emoji = "⭐") {
                                         uriHandler.openUri("https://github.com/Artriai/lyrics-plus-android")
@@ -552,6 +554,9 @@ private fun LyricsOverlay(
                             MenuActionRow(label = "立刻同步", emoji = "🔄") {
                                 viewModel.forceSyncTime()
                             }
+                            MenuActionRow(label = "切换歌词源 [当前: ${state.activeLyricsSource}]", emoji = "🎵") {
+                                viewModel.switchLyricsSource()
+                            }
                             MenuActionRow(label = "歌词提前 (-0.5s) [当前: $offsetText]", emoji = "🐰") {
                                 viewModel.adjustOffset(-500)
                             }
@@ -561,16 +566,18 @@ private fun LyricsOverlay(
                             MenuActionRow(label = "重新取色", emoji = "🎨") {
                                 viewModel.rotatePaletteColors()
                             }
-                            MenuActionRow(label = "切换歌词源 [当前: ${state.activeLyricsSource}]", emoji = "🎵") {
-                                viewModel.switchLyricsSource()
-                            }
-                            MenuActionRow(
-                                label = if (state.showRomaji) "罗马音: 开启" else "罗马音: 关闭",
-                                emoji = "🔤",
-                                active = state.showRomaji
-                            ) {
-                                viewModel.toggleRomaji()
-                            }
+                             val readingModeLabel = when (state.readingMode) {
+                                 0 -> "注音模式: 无"
+                                 1 -> "注音模式: 罗马音"
+                                 else -> "注音模式: 日文假名"
+                             }
+                             MenuActionRow(
+                                 label = readingModeLabel,
+                                 emoji = "🔤",
+                                 active = state.readingMode > 0
+                             ) {
+                                 viewModel.cycleReadingMode()
+                             }
                             MenuActionRow(
                                 label = if (state.keepScreenOn) "屏幕常亮: 开启" else "屏幕常亮: 关闭",
                                 emoji = "💡",

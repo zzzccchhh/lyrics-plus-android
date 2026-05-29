@@ -15,7 +15,45 @@ class QQMusicClient {
     suspend fun findSyncedLyrics(track: NowPlaying): Result<LyricsSearchResult> = withContext(Dispatchers.IO) {
         runCatching {
             val searchResult = searchSongMid(track) ?: error("Cannot find QQ Music track")
-            val lyricData = fetchLyrics(searchResult.mid) ?: error("Cannot find QQ Music lyrics")
+            
+            // 1. Try Vkeys API
+            val vkeysResult = runCatching {
+                val url = "https://api.vkeys.cn/v2/music/tencent/lyric?mid=${searchResult.mid}"
+                val response = requestGet(url)
+                if (response.code !in 200..299) error("Vkeys HTTP ${response.code}")
+                
+                val json = JSONObject(response.body)
+                if (json.optInt("code", -1) != 200) error("Vkeys API error: ${json.optString("message")}")
+                
+                val dataObj = json.getJSONObject("data")
+                val yrc = dataObj.optString("yrc").orEmpty()
+                val lrc = dataObj.optString("lrc").orEmpty()
+                val trans = dataObj.optString("trans").orEmpty()
+                val roma = dataObj.optString("roma").orEmpty()
+                
+                val syncedBase = if (yrc.isNotBlank()) yrc else lrc
+                if (syncedBase.isBlank()) error("Vkeys lyrics were empty")
+                
+                val synced = LrcParser.parse(syncedBase).ifEmpty { error("Vkeys parsed lyrics empty") }
+                val translation = LrcParser.parse(trans).filter { line ->
+                    val clean = line.text.trim()
+                    !(clean.all { it == '/' } && clean.isNotEmpty())
+                }
+                val reading = LrcParser.parse(roma)
+                
+                val mergedTrans = mergeTranslation(synced, translation)
+                val mergedReading = mergeReading(mergedTrans, reading)
+                
+                LyricsSearchResult(mergedReading, searchResult.score)
+            }
+            
+            // 2. Return Vkeys result if successful
+            if (vkeysResult.isSuccess) {
+                return@runCatching vkeysResult.getOrThrow()
+            }
+            
+            // 3. Fallback to Official QQ Music API on failure
+            val lyricData = fetchLyrics(searchResult.mid) ?: error("Cannot find QQ Music lyrics (Vkeys and Official failed)")
             
             val lyricBase64 = lyricData.optString("lyric").orEmpty()
             val transBase64 = lyricData.optString("trans").orEmpty()
@@ -31,7 +69,10 @@ class QQMusicClient {
             val rawTrans = unescapeHtml(rawTransEncoded)
 
             val synced = LrcParser.parse(rawLyric).ifEmpty { error("QQ Music synced lyrics empty") }
-            val translation = LrcParser.parse(rawTrans)
+            val translation = LrcParser.parse(rawTrans).filter { line ->
+                val clean = line.text.trim()
+                !(clean.all { it == '/' } && clean.isNotEmpty())
+            }
 
             val merged = mergeTranslation(synced, translation)
             LyricsSearchResult(merged, searchResult.score)
@@ -142,6 +183,22 @@ class QQMusicClient {
 
             if (matched != null && line.startTimeMs - matched.startTimeMs <= 8000) {
                 line.copy(translation = matched.text)
+            } else {
+                line
+            }
+        }
+    }
+
+    private fun mergeReading(base: List<LyricsLine>, reading: List<LyricsLine>): List<LyricsLine> {
+        if (reading.isEmpty()) return base
+        return base.mapIndexed { index, line ->
+            val nextStart = base.getOrNull(index + 1)?.startTimeMs ?: Long.MAX_VALUE
+            val matched = reading
+                .filter { it.startTimeMs <= line.startTimeMs && it.startTimeMs < nextStart }
+                .minByOrNull { line.startTimeMs - it.startTimeMs }
+
+            if (matched != null && line.startTimeMs - matched.startTimeMs <= 8000) {
+                line.copy(reading = matched.text)
             } else {
                 line
             }

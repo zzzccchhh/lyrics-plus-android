@@ -6,6 +6,7 @@ import com.lyricsplus.android.data.NowPlaying
 import com.lyricsplus.android.data.LyricsSearchResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
 import java.util.concurrent.ConcurrentHashMap
 
 class LyricsProvider(
@@ -55,36 +56,94 @@ class LyricsProvider(
             // Check SQLite database cache first
             val cached = cacheDb.getLyrics(trackKey)
             if (cached != null) {
+                // If the cached lyrics are missing 'reading' (Romaji/Furigana) but contain Japanese kana,
+                // generate them on-the-fly and update the cache so the user doesn't get stuck!
+                val hasKana = cached.lyrics.any { it.text.hasJapaneseKana() }
+                val needsReading = hasKana && cached.lyrics.any { it.reading.isNullOrBlank() }
+                val finalLyrics = if (needsReading) {
+                    val processed = cached.lyrics.map { line ->
+                        if (line.reading.isNullOrBlank()) {
+                            val cleanText = line.text.replace(timestampStripRegex, "").trim()
+                            val romaji = japaneseReader.readingFor(cleanText)
+                            val furigana = japaneseReader.furiganaFor(cleanText)
+                            val reading = if (romaji != null || furigana != null) {
+                                org.json.JSONObject().apply {
+                                    put("romaji", romaji.orEmpty())
+                                    put("furigana", furigana.orEmpty())
+                                }.toString()
+                            } else null
+                            line.copy(reading = reading)
+                        } else {
+                            line
+                        }
+                    }
+                    // Save back to DB cache so we don't have to re-generate next time
+                    cacheDb.saveLyrics(trackKey, processed, cached.source)
+                    processed
+                } else {
+                    cached.lyrics
+                }
                 // Return cached version with perfect score to avoid background override
-                return@runCatching cached.copy(score = 140)
+                return@runCatching CachedLyricsResult(finalLyrics, cached.source, score = 140)
             }
 
             // Clear in-memory cache for this track key on starting fresh
             inMemoryCache.keys.filter { it.startsWith("$trackKey|") }.forEach { inMemoryCache.remove(it) }
 
-            var resolvedSource = "网易云音乐"
-            val netease = findSyncedLyricsForSource(track, "网易云音乐")
-            val resolved = netease.getOrElse { neteaseErr ->
-                resolvedSource = "QQ音乐"
-                val qq = findSyncedLyricsForSource(track, "QQ音乐")
-                qq.getOrElse { qqErr ->
-                    resolvedSource = "LRCLIB"
-                    val lrclib = findSyncedLyricsForSource(track, "LRCLIB")
-                    lrclib.getOrElse { lrclibErr ->
-                        if (neteaseErr is java.io.IOException || qqErr is java.io.IOException || lrclibErr is java.io.IOException) {
-                            throw (neteaseErr as? java.io.IOException) ?: (qqErr as? java.io.IOException) ?: (lrclibErr as? java.io.IOException) ?: neteaseErr
-                        } else {
-                            val instrumental = listOf(LyricsLine(0L, "纯音乐 / 无歌词"))
-                            cacheDb.saveLyrics(trackKey, instrumental, "纯音乐")
-                            val result = CachedLyricsResult(instrumental, "纯音乐", score = 0)
-                            inMemoryCache["$trackKey|纯音乐"] = result
-                            return@runCatching result
-                        }
+            // Fetch NetEase and QQ Music concurrently in parallel
+            val neteaseDeferred = async { runCatching { findSyncedLyricsForSource(track, "网易云音乐").getOrThrow() } }
+            val qqDeferred = async { runCatching { findSyncedLyricsForSource(track, "QQ音乐").getOrThrow() } }
+
+            val neteaseResult = neteaseDeferred.await()
+            val qqResult = qqDeferred.await()
+
+            val candidates = mutableListOf<Pair<CachedLyricsResult, String>>()
+            neteaseResult.getOrNull()?.let { candidates.add(it to "网易云音乐") }
+            qqResult.getOrNull()?.let { candidates.add(it to "QQ音乐") }
+
+            val bestCandidate = if (candidates.isNotEmpty()) {
+                candidates.maxByOrNull { (result, _) ->
+                    var finalScore = result.score
+                    // Give a massive +100 bonus to syllable-level (YRC/QRC) lyrics
+                    val hasSyllables = result.lyrics.any { line -> timestampStripRegex.containsMatchIn(line.text) }
+                    if (hasSyllables) {
+                        finalScore += 100
                     }
+                    // Tie-breaker: prefer NetEase over QQ Music if score is equal
+                    finalScore
+                }
+            } else null
+
+            val resolvedPair = if (bestCandidate != null) {
+                bestCandidate
+            } else {
+                // Fallback to LRCLIB if both NetEase and QQ Music failed
+                val lrclib = runCatching { findSyncedLyricsForSource(track, "LRCLIB").getOrThrow() }.getOrNull()
+                if (lrclib != null) {
+                    lrclib to "LRCLIB"
+                } else {
+                    null
                 }
             }
 
-            // Cache the first matched result to SQLite database
+            if (resolvedPair == null) {
+                val neteaseErr = neteaseResult.exceptionOrNull()
+                val qqErr = qqResult.exceptionOrNull()
+                if (neteaseErr is java.io.IOException || qqErr is java.io.IOException) {
+                    throw (neteaseErr as? java.io.IOException) ?: (qqErr as? java.io.IOException) ?: neteaseErr ?: qqErr ?: Exception("Network error")
+                } else {
+                    val instrumental = listOf(LyricsLine(0L, "纯音乐 / 无歌词"))
+                    cacheDb.saveLyrics(trackKey, instrumental, "纯音乐")
+                    val result = CachedLyricsResult(instrumental, "纯音乐", score = 0)
+                    inMemoryCache["$trackKey|纯音乐"] = result
+                    return@runCatching result
+                }
+            }
+
+            val resolved = resolvedPair.first
+            val resolvedSource = resolvedPair.second
+
+            // Cache the best matched result to SQLite database
             cacheDb.saveLyrics(trackKey, resolved.lyrics, resolvedSource)
             resolved
         }
@@ -114,7 +173,33 @@ class LyricsProvider(
             val hasKana = base.any { line -> line.text.hasJapaneseKana() }
 
             val processed = base.map { line ->
-                val reading = if (hasKana) japaneseReader.readingFor(line.text) else null
+                val existingReading = line.reading.orEmpty()
+                val reading = if (existingReading.isNotBlank()) {
+                    if (existingReading.startsWith("{")) {
+                        existingReading
+                    } else {
+                        val cleanText = line.text.replace(timestampStripRegex, "").trim()
+                        val furigana = japaneseReader.furiganaFor(cleanText)
+                        org.json.JSONObject().apply {
+                            put("romaji", existingReading)
+                            put("furigana", furigana.orEmpty())
+                        }.toString()
+                    }
+                } else if (hasKana) {
+                    val cleanText = line.text.replace(timestampStripRegex, "").trim()
+                    val romaji = japaneseReader.readingFor(cleanText)
+                    val furigana = japaneseReader.furiganaFor(cleanText)
+                    if (romaji != null || furigana != null) {
+                        org.json.JSONObject().apply {
+                            put("romaji", romaji.orEmpty())
+                            put("furigana", furigana.orEmpty())
+                        }.toString()
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
                 line.copy(reading = reading)
             }
 
@@ -141,6 +226,8 @@ class LyricsProvider(
     companion object {
         @Volatile
         private var instance: LyricsProvider? = null
+
+        private val timestampStripRegex = Regex("<\\d{2}:\\d{2}[.:]\\d{1,3}>|\\(\\d+,\\d+(?:,\\d+)?\\)")
 
         fun getInstance(context: Context): LyricsProvider {
             return instance ?: synchronized(this) {

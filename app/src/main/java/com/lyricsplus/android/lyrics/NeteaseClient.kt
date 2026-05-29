@@ -17,8 +17,16 @@ class NeteaseClient {
             if (lyricJson.optBoolean("nolyric", false)) {
                 return@runCatching LyricsSearchResult(listOf(LyricsLine(0L, "♪ 纯音乐 ♪")), searchResult.second)
             }
-            val synced = parseNeteaseLrc(lyricJson.optJSONObject("lrc")?.optString("lyric").orEmpty())
-                .ifEmpty { error("Netease synced lyrics were empty") }
+            
+            val yrcString = lyricJson.optJSONObject("yrc")?.optString("lyric").orEmpty()
+            val lrcString = lyricJson.optJSONObject("lrc")?.optString("lyric").orEmpty()
+
+            val synced = if (yrcString.isNotBlank()) {
+                parseNeteaseYrc(yrcString)
+            } else {
+                parseNeteaseLrc(lrcString)
+            }.ifEmpty { error("Netease synced lyrics were empty") }
+
             val translation = parseNeteaseLrc(lyricJson.optJSONObject("tlyric")?.optString("lyric").orEmpty())
 
             val merged = mergeTranslation(synced, translation)
@@ -69,8 +77,8 @@ class NeteaseClient {
 
     private fun fetchLyrics(songId: Long): JSONObject? {
         val urls = listOf(
-            "https://music.163.com/api/song/lyric/v1?id=$songId&lv=1&kv=1&tv=1",
-            "https://music.163.com/api/song/lyric?id=$songId&lv=1&kv=1&tv=1"
+            "https://music.163.com/api/song/lyric/v1?id=$songId&lv=1&kv=1&tv=1&yv=1&rv=1",
+            "https://music.163.com/api/song/lyric?id=$songId&lv=1&kv=1&tv=1&yv=1&rv=1"
         )
 
         return urls.firstNotNullOfOrNull { url ->
@@ -79,6 +87,7 @@ class NeteaseClient {
             val json = JSONObject(response.body)
             if (
                 json.optJSONObject("lrc")?.optString("lyric").orEmpty().isNotBlank() ||
+                json.optJSONObject("yrc")?.optString("lyric").orEmpty().isNotBlank() ||
                 json.optJSONObject("tlyric")?.optString("lyric").orEmpty().isNotBlank() ||
                 json.optBoolean("nolyric", false)
             ) {
@@ -86,6 +95,15 @@ class NeteaseClient {
             } else {
                 null
             }
+        }
+    }
+
+    private fun parseNeteaseYrc(raw: String): List<LyricsLine> {
+        if (raw.isBlank()) return emptyList()
+        val parsed = LrcParser.parse(raw)
+        return parsed.filterNot { line ->
+            val cleanText = line.text.replace(yrcSyllableRegex, "").trim()
+            cleanText.isBlank() || containsCredits(cleanText) || cleanText == "纯音乐, 请欣赏"
         }
     }
 
@@ -172,6 +190,7 @@ class NeteaseClient {
 
     private companion object {
         val timestampRegex = Regex("\\[(\\d{1,2}):(\\d{2})(?:[.:](\\d{1,3}))?]")
+        val yrcSyllableRegex = Regex("\\(\\d+,\\d+(?:,\\d+)?\\)")
         val extraInfoRegex = Regex("\\s*[\\[(（].*?(?:remaster|remastered|live|mono|stereo|version|edit|mix|feat\\.?|with).*?[\\]）)]\\s*", RegexOption.IGNORE_CASE)
         val featRegex = Regex("\\s+(feat\\.?|ft\\.?|with)\\s+.+$", RegexOption.IGNORE_CASE)
         val whitespaceRegex = Regex("\\s+")

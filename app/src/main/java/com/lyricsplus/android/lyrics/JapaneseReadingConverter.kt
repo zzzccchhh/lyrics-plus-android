@@ -28,8 +28,44 @@ class JapaneseReadingConverter {
             ?.takeIf { it.isNotBlank() && it != text }
     }
 
+    fun furiganaFor(text: String): String? {
+        if (!text.looksJapanese()) return null
+        val furigana = runCatching {
+            tokenizer.tokenize(text).joinToString("") { token ->
+                val surface = token.surface
+                if (surface.any { it.isKanji() }) {
+                    val katakanaReading = token.reading
+                    val reading = if (katakanaReading == "*" || katakanaReading.isNullOrBlank()) {
+                        surface
+                    } else {
+                        katakanaReading
+                    }
+                    val hiragana = reading.katakanaToHiragana()
+                    "<ruby>$surface<rt>$hiragana</rt></ruby>"
+                } else {
+                    surface
+                }
+            }
+        }.getOrNull()
+
+        return furigana?.takeIf { it.isNotBlank() && it != text }
+    }
+
     private fun String.looksJapanese(): Boolean =
         any { it in '\u3040'..'\u30FF' } || any { it in '\u4E00'..'\u9FFF' }
+
+    private fun Char.isKanji(): Boolean =
+        this in '\u4E00'..'\u9FFF'
+
+    private fun String.katakanaToHiragana(): String {
+        return map { char ->
+            if (char in '\u30A1'..'\u30F6') {
+                (char.code - 0x60).toChar()
+            } else {
+                char
+            }
+        }.joinToString("")
+    }
 
     private fun String.kanaToRomaji(): String {
         val normalized = map { char ->

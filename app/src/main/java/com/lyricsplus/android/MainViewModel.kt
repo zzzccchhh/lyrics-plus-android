@@ -32,7 +32,7 @@ data class LyricsUiState(
     val lastBroadcastAction: String? = null,
     val playbackSource: String = "none",
     val lyricsOffsetMs: Long = 0L,
-    val showRomaji: Boolean = true,
+    val readingMode: Int = 1, // 0=None, 1=Romaji, 2=Furigana
     val keepScreenOn: Boolean = false,
     val activeLyricsSource: String = "未加载",
     val isInitializing: Boolean = true
@@ -426,8 +426,8 @@ class MainViewModel(
         _uiState.update { it.copy(lyricsOffsetMs = it.lyricsOffsetMs + deltaMs) }
     }
 
-    fun toggleRomaji() {
-        _uiState.update { it.copy(showRomaji = !it.showRomaji) }
+    fun cycleReadingMode() {
+        _uiState.update { it.copy(readingMode = (it.readingMode + 1) % 3) }
     }
 
     fun toggleKeepScreenOn() {

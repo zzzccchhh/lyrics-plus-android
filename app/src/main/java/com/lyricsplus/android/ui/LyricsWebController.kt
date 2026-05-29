@@ -101,9 +101,9 @@ class LyricsWebController(context: Context) {
         webView.evaluateJavascript("window.LyricsPlus.setPlaybackState($positionMs, $isPlaying)", null)
     }
 
-    fun pushRomajiState(show: Boolean) {
+    fun pushReadingMode(mode: Int) {
         if (!isReady) return
-        webView.evaluateJavascript("window.LyricsPlus.setShowRomaji($show)", null)
+        webView.evaluateJavascript("window.LyricsPlus.setReadingMode($mode)", null)
     }
 
     fun pushRightAligned(rightAligned: Boolean) {

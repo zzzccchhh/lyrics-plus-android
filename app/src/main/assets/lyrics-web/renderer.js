@@ -17,14 +17,16 @@
     track: null,
     lyrics: [],
     activeIndex: -1,
-    showRomaji: true,
+    readingMode: 1, // 0=None, 1=Romaji, 2=Furigana
     isFullLyricsMode: false
   };
 
   var playback = {
     positionMs: 0,
     isPlaying: false,
-    updatedAt: 0
+    updatedAt: 0,
+    visualOffset: 0,
+    resumeTime: 0
   };
 
   var prevActiveIndex = -1;
@@ -114,9 +116,53 @@
 
   function setPlaybackState(positionMs, isPlaying) {
     try {
-      playback.positionMs = Number(positionMs) || 0;
-      playback.isPlaying = !!isPlaying;
+      var wasPlaying = playback.isPlaying;
+      var newIsPlaying = !!isPlaying;
+      var targetPos = Number(positionMs) || 0;
+
+      if (newIsPlaying) {
+        if (!wasPlaying) {
+          // Transition from paused to playing: smoothly transition/decay the visual offset
+          var frozenPos = playback.positionMs;
+          var diff = frozenPos - targetPos;
+          if (Math.abs(diff) < 1500) {
+            playback.visualOffset = diff;
+          } else {
+            playback.visualOffset = 0;
+          }
+          playback.positionMs = targetPos;
+          playback.resumeTime = performance.now();
+        } else {
+          // Already playing: periodic sync update
+          playback.positionMs = targetPos;
+        }
+      } else {
+        if (wasPlaying) {
+          // Transition from playing to paused: freeze visually at the extrapolated position
+          var elapsed = performance.now() - playback.updatedAt;
+          var extrapolated = playback.positionMs + elapsed;
+          if (Math.abs(extrapolated - targetPos) < 1500) {
+            playback.positionMs = extrapolated;
+          } else {
+            playback.positionMs = targetPos;
+          }
+          playback.visualOffset = 0;
+        } else {
+          // Already paused: ignore minor position updates (such as duplicate pause reports from Android)
+          // only accept seeks (changes > 1.5s)
+          var diff = Math.abs(playback.positionMs - targetPos);
+          if (diff > 1500) {
+            playback.positionMs = targetPos;
+            playback.visualOffset = 0;
+          } else {
+            // Keep the frozen position, ignore the minor update
+          }
+        }
+      }
+
+      playback.isPlaying = newIsPlaying;
       playback.updatedAt = performance.now();
+
       if (playback.isPlaying) {
         stageEl.classList.remove("paused");
       } else {
@@ -128,14 +174,14 @@
     }
   }
 
-  function setShowRomaji(show) {
+  function setReadingMode(mode) {
     try {
-      state.showRomaji = !!show;
-      // Romaji toggle requires DOM content changes, so do a full render
+      state.readingMode = Number(mode) || 0; // 0=None, 1=Romaji, 2=Furigana
+      // Mode change requires DOM content changes, so do a full render
       renderFull();
-      report("setShowRomaji: " + state.showRomaji);
+      report("setReadingMode: " + state.readingMode);
     } catch (error) {
-      report("error:setShowRomaji:" + error.message);
+      report("error:setReadingMode:" + error.message);
     }
   }
 
@@ -173,6 +219,20 @@
     if (!state.lyrics.length) return;
     var elapsed = playback.isPlaying ? (performance.now() - playback.updatedAt) : 0;
     var currentPosition = playback.positionMs + elapsed;
+
+    // Apply smooth visual offset decay if resuming
+    if (playback.isPlaying && playback.visualOffset) {
+      var decayTime = 1000; // Decay the visual offset to 0 over 1 second
+      var timeSinceResume = performance.now() - playback.resumeTime;
+      if (timeSinceResume < decayTime) {
+        var ratio = 1 - (timeSinceResume / decayTime);
+        ratio = ratio * ratio; // quadratic ease-out
+        currentPosition += playback.visualOffset * ratio;
+      } else {
+        playback.visualOffset = 0;
+      }
+    }
+
     var nextIndex = findActiveIndex(currentPosition);
     if (nextIndex !== state.activeIndex) {
       state.activeIndex = nextIndex;
@@ -184,6 +244,40 @@
         patchFocusedMode();
       }
       report("playback: " + Math.round(currentPosition / 1000) + "s, active: " + state.activeIndex);
+    }
+    updateSyllableHighlights(currentPosition);
+  }
+
+  function updateSyllableHighlights(currentPosition) {
+    var activeLineEl = lyricsEl.querySelector(".line.active");
+    if (!activeLineEl) return;
+    
+    var syllables = activeLineEl.querySelectorAll(".syllable");
+    if (!syllables.length) return;
+    
+    for (var i = 0; i < syllables.length; i++) {
+      var el = syllables[i];
+      var start = Number(el.getAttribute("data-start")) || 0;
+      var end = Number(el.getAttribute("data-end")) || 0;
+      
+      if (currentPosition >= end) {
+        if (el.className !== "syllable past") {
+          el.className = "syllable past";
+        }
+        el.style.setProperty("--progress", "100%");
+      } else if (currentPosition >= start && currentPosition < end) {
+        if (el.className !== "syllable active") {
+          el.className = "syllable active";
+        }
+        var duration = end - start;
+        var progress = duration > 0 ? ((currentPosition - start) / duration) : 1;
+        el.style.setProperty("--progress", (progress * 100) + "%");
+      } else {
+        if (el.className !== "syllable") {
+          el.className = "syllable";
+        }
+        el.style.setProperty("--progress", "0%");
+      }
     }
   }
 
@@ -245,27 +339,234 @@
     return totalLen > 65 ? "long" : totalLen < 12 ? "short" : "";
   }
 
-  function buildLineInnerHTML(line, isActive) {
-    var lineTextHtml = escapeHtml(line.text || "♪");
-    if (line.text === "•••") {
-      if (isActive) {
-        lineTextHtml = '<span class="intro-dots"><span class="dot dot-1">•</span><span class="dot dot-2">•</span><span class="dot dot-3">•</span></span>';
+  function parseSyllables(lineText, lineStartTime) {
+    var syllables = [];
+    lineText = lineText || "";
+    lineStartTime = Number(lineStartTime) || 0;
+
+    // 1. Enhanced LRC: <00:12.34>word
+    var lrcRegex = /<(\d{2}):(\d{2})[.:](\d{2,3})>([^<]*)/g;
+
+    // 2. NetEase YRC prefix or QRC absolute: (12580,250,0)word or (19538,207)word
+    var prefixRegex = /\((\d+),(\d+)(?:,\d+)?\)([^(<]+)/g;
+
+    // 3. QQ Music YRC/QRC suffix: word(293,293) or word (19538,207)
+    // NOTE: We exclude ')' and '(' and '<' from the character class to prevent matching timing tag boundaries.
+    var suffixRegex = /([^(<)]+)\s*\((\d+),(\d+)\)/g;
+
+    var match;
+
+    if (lrcRegex.test(lineText)) {
+      lrcRegex.lastIndex = 0;
+      while ((match = lrcRegex.exec(lineText)) !== null) {
+        var min = parseInt(match[1], 10);
+        var sec = parseInt(match[2], 10);
+        var fracStr = match[3];
+        var text = match[4];
+
+        var frac = parseInt(fracStr, 10);
+        if (fracStr.length === 2) frac *= 10;
+
+        var timeMs = min * 60000 + sec * 1000 + frac;
+        syllables.push({
+          timeMs: timeMs,
+          text: text
+        });
+      }
+    } else {
+      // Robust format detection: if the line starts with a parenthesized timing tag, e.g. (12580,250), it is prefix format.
+      // Otherwise, it is suffix format (QQ Music standard YRC/QRC).
+      var isPrefix = /^\s*\(\d+,\d+(?:,\d+)?\)/.test(lineText);
+      if (isPrefix) {
+        prefixRegex.lastIndex = 0;
+        while ((match = prefixRegex.exec(lineText)) !== null) {
+          var startMs = parseInt(match[1], 10);
+          var durationMs = parseInt(match[2], 10);
+          var text = match[3];
+
+          // Resolve absolute vs relative (bulletproof check to prevent minor QRC timestamp offsets from being misidentified as relative)
+          var isRelative = (startMs < lineStartTime) && (startMs < 1000 || (lineStartTime - startMs) > Math.max(2000, lineStartTime * 0.5));
+          var timeMs = isRelative ? (lineStartTime + startMs) : startMs;
+          syllables.push({
+            timeMs: timeMs,
+            durationMs: durationMs,
+            text: text
+          });
+        }
       } else {
-        lineTextHtml = '•••';
+        suffixRegex.lastIndex = 0;
+        while ((match = suffixRegex.exec(lineText)) !== null) {
+          var text = match[1];
+          var startMs = parseInt(match[2], 10);
+          var durationMs = parseInt(match[3], 10);
+
+          // Resolve absolute vs relative (bulletproof check to prevent minor QRC timestamp offsets from being misidentified as relative)
+          var isRelative = (startMs < lineStartTime) && (startMs < 1000 || (lineStartTime - startMs) > Math.max(2000, lineStartTime * 0.5));
+          var timeMs = isRelative ? (lineStartTime + startMs) : startMs;
+          syllables.push({
+            timeMs: timeMs,
+            durationMs: durationMs,
+            text: text
+          });
+        }
       }
     }
 
-    var reading = "";
-    if (line.reading && state.showRomaji) {
-      // In focused mode, only show romaji on active line
+    return syllables;
+  }
+
+  function stripSyllableTimestamps(lineText) {
+    if (!lineText) return "";
+    return lineText
+      .replace(/<(\d{2}):(\d{2})[.:](\d{2,3})>/g, "")
+      .replace(/\(\d+,\d+(?:,\d+)?\)/g, "");
+  }
+
+  function buildFuriganaInnerHTML(furiganaHtml, syllables, lineDuration, lineStartTime) {
+    if (!furiganaHtml) return "";
+    var tokens = furiganaHtml.match(/<ruby>.*?<\/ruby>|[^<>]/g) || [];
+    if (syllables.length === 0) return furiganaHtml;
+
+    var html = "";
+    for (var i = 0; i < tokens.length; i++) {
+      var sIdx = Math.floor(i * syllables.length / tokens.length);
+      if (sIdx >= syllables.length) sIdx = syllables.length - 1;
+
+      var s = syllables[sIdx];
+
+      var nextSIdx = Math.floor((i + 1) * syllables.length / tokens.length);
+      if (nextSIdx >= syllables.length) nextSIdx = syllables.length;
+      var nextS = syllables[nextSIdx];
+
+      var sEnd = s.durationMs ? (s.timeMs + s.durationMs) : (nextS ? nextS.timeMs : (lineStartTime + lineDuration));
+      if (!s.durationMs && !nextS) {
+        sEnd = s.timeMs + Math.min(lineStartTime + lineDuration - s.timeMs, 1000);
+      }
+      if (sEnd <= s.timeMs) {
+        sEnd = s.timeMs + 200;
+      }
+
+      html += '<span class="syllable" data-start="' + s.timeMs + '" data-end="' + sEnd + '">' + tokens[i] + '</span>';
+    }
+    return html;
+  }
+
+  function buildRomajiInnerHTML(romajiText, lineStartTime, nextLine, mainSyllables) {
+    if (!romajiText) return "";
+    // If the Romaji text only contains timing tags and no actual letters/words, discard it
+    var clean = romajiText.replace(/\(\d+,\d+(?:,\d+)?\)/g, "").trim();
+    if (!clean) return "";
+
+    var romajiSyllables = parseSyllables(romajiText, lineStartTime);
+    var html = "";
+    if (romajiSyllables.length > 0) {
+      var lineDuration = nextLine ? (nextLine.startTimeMs - lineStartTime) : 4000;
+      for (var sIdx = 0; sIdx < romajiSyllables.length; sIdx++) {
+        var s = romajiSyllables[sIdx];
+        var nextS = romajiSyllables[sIdx + 1];
+        var sEnd = s.durationMs ? (s.timeMs + s.durationMs) : (nextS ? nextS.timeMs : (lineStartTime + lineDuration));
+        if (!s.durationMs && !nextS) {
+          sEnd = s.timeMs + Math.min(lineStartTime + lineDuration - s.timeMs, 1000);
+        }
+        if (sEnd <= s.timeMs) {
+          sEnd = s.timeMs + 200;
+        }
+        var spacer = sIdx === romajiSyllables.length - 1 ? "" : " ";
+        html += '<span class="syllable" data-start="' + s.timeMs + '" data-end="' + sEnd + '">' + escapeHtml(s.text) + '</span>' + spacer;
+      }
+    } else if (mainSyllables && mainSyllables.length > 0) {
+      var tokens = romajiText.trim().split(/\s+/);
+      var lineDuration = nextLine ? (nextLine.startTimeMs - lineStartTime) : 4000;
+      for (var i = 0; i < tokens.length; i++) {
+        var sIdx = Math.floor(i * mainSyllables.length / tokens.length);
+        if (sIdx >= mainSyllables.length) sIdx = mainSyllables.length - 1;
+        var s = mainSyllables[sIdx];
+
+        var nextSIdx = Math.floor((i + 1) * mainSyllables.length / tokens.length);
+        if (nextSIdx >= mainSyllables.length) nextSIdx = mainSyllables.length;
+        var nextS = mainSyllables[nextSIdx];
+
+        var sEnd = s.durationMs ? (s.timeMs + s.durationMs) : (nextS ? nextS.timeMs : (lineStartTime + lineDuration));
+        if (!s.durationMs && !nextS) {
+          sEnd = s.timeMs + Math.min(lineStartTime + lineDuration - s.timeMs, 1000);
+        }
+        if (sEnd <= s.timeMs) {
+          sEnd = s.timeMs + 200;
+        }
+
+        var spacer = i === tokens.length - 1 ? "" : " ";
+        html += '<span class="syllable" data-start="' + s.timeMs + '" data-end="' + sEnd + '">' + escapeHtml(tokens[i]) + '</span>' + spacer;
+      }
+    } else {
+      html = escapeHtml(romajiText);
+    }
+    return html;
+  }
+
+  function buildLineInnerHTML(line, isActive, nextLine) {
+    var parsedReading = null;
+    if (line.reading) {
+      try {
+        if (line.reading.startsWith("{")) {
+          parsedReading = JSON.parse(line.reading);
+        }
+      } catch (e) {}
+    }
+
+    var romajiText = "";
+    var furiganaHtml = "";
+    if (parsedReading) {
+      romajiText = parsedReading.romaji || "";
+      furiganaHtml = parsedReading.furigana || "";
+    } else if (line.reading) {
+      romajiText = line.reading;
+    }
+
+    var syllables = parseSyllables(line.text || "", Number(line.startTimeMs || 0));
+    var lineTextHtml = "";
+    var lineDuration = nextLine ? (nextLine.startTimeMs - line.startTimeMs) : 4000;
+
+    var showFurigana = (state.readingMode === 2 && furiganaHtml && (state.isFullLyricsMode || isActive));
+
+    if (showFurigana) {
+      // 1. Furigana mode: Use raw HTML containing <ruby> tags (with word-level sweeps if matched)
+      lineTextHtml = buildFuriganaInnerHTML(furiganaHtml, syllables, lineDuration, Number(line.startTimeMs || 0));
+    } else if (syllables.length > 0) {
+      // 2. Karaoke mode: Syllable-level enhanced LRC highlights
+      for (var sIdx = 0; sIdx < syllables.length; sIdx++) {
+        var s = syllables[sIdx];
+        var nextS = syllables[sIdx + 1];
+        var sEnd = s.durationMs ? (s.timeMs + s.durationMs) : (nextS ? nextS.timeMs : (line.startTimeMs + lineDuration));
+        if (!s.durationMs && !nextS) {
+          sEnd = s.timeMs + Math.min(line.startTimeMs + lineDuration - s.timeMs, 1000);
+        }
+        if (sEnd <= s.timeMs) {
+          sEnd = s.timeMs + 200;
+        }
+        lineTextHtml += '<span class="syllable" data-start="' + s.timeMs + '" data-end="' + sEnd + '">' + escapeHtml(s.text) + '</span>';
+      }
+    } else {
+      // 3. Standard line-level text
+      lineTextHtml = escapeHtml(line.text || "♪");
+      if (line.text === "•••") {
+        if (isActive) {
+          lineTextHtml = '<span class="intro-dots"><span class="dot dot-1">•</span><span class="dot dot-2">•</span><span class="dot dot-3">•</span></span>';
+        } else {
+          lineTextHtml = '•••';
+        }
+      }
+    }
+
+    var readingHtml = "";
+    if (state.readingMode === 1 && romajiText) {
       if (state.isFullLyricsMode || isActive) {
-        reading = '<span class="romaji">' + escapeHtml(line.reading) + "</span>";
+        readingHtml = '<span class="romaji">' + buildRomajiInnerHTML(romajiText, Number(line.startTimeMs || 0), nextLine, syllables) + "</span>";
       }
     }
 
     var translation = line.translation ? '<span class="translation">' + escapeHtml(line.translation) + "</span>" : "";
 
-    return reading + '<span class="text">' + lineTextHtml + "</span>" + translation;
+    return readingHtml + '<span class="text">' + lineTextHtml + "</span>" + translation;
   }
 
   /**
@@ -321,18 +622,90 @@
       }
 
       // Update romaji visibility: show only on active line in focused mode
-      if (lineData && lineData.reading && state.showRomaji) {
-        var existingRomaji = el.querySelector(".romaji");
+      var parsedReading = null;
+      if (lineData && lineData.reading) {
+        try {
+          if (lineData.reading.startsWith("{")) {
+            parsedReading = JSON.parse(lineData.reading);
+          }
+        } catch (e) {}
+      }
+      var romajiText = "";
+      if (parsedReading) {
+        romajiText = parsedReading.romaji || "";
+      } else if (lineData && lineData.reading) {
+        romajiText = lineData.reading;
+      }
+
+      var existingRomaji = el.querySelector(".romaji");
+      if (state.readingMode === 1 && romajiText) {
+        var nextLineData = state.lyrics[i + 1];
+        var mainSyllables = parseSyllables(lineData.text || "", Number(lineData.startTimeMs || 0));
+        var romajiHtml = buildRomajiInnerHTML(romajiText, Number(lineData.startTimeMs || 0), nextLineData, mainSyllables);
         if (distance === 0) {
           if (!existingRomaji) {
             var romajiSpan = document.createElement("span");
             romajiSpan.className = "romaji";
-            romajiSpan.textContent = lineData.reading;
+            romajiSpan.innerHTML = romajiHtml;
             el.insertBefore(romajiSpan, el.firstChild);
+          } else {
+            existingRomaji.innerHTML = romajiHtml;
           }
         } else {
           if (existingRomaji) {
             existingRomaji.remove();
+          }
+        }
+      } else {
+        if (existingRomaji) {
+          existingRomaji.remove();
+        }
+      }
+
+      // Update Furigana annotations dynamically in focused mode (show only on active line)
+      var textSpan = el.querySelector(".text");
+      if (textSpan && state.readingMode === 2 && lineData) {
+        var parsedReading = null;
+        if (lineData.reading) {
+          try {
+            if (lineData.reading.startsWith("{")) {
+              parsedReading = JSON.parse(lineData.reading);
+            }
+          } catch (e) {}
+        }
+        var furiganaHtml = parsedReading ? (parsedReading.furigana || "") : "";
+        if (furiganaHtml) {
+          var mainSyllables = parseSyllables(lineData.text || "", Number(lineData.startTimeMs || 0));
+          var lineDuration = (state.lyrics[i + 1]) ? (state.lyrics[i + 1].startTimeMs - lineData.startTimeMs) : 4000;
+          
+          if (distance === 0) {
+            // Active line: show Furigana (annotated Kanji with ruby tags)
+            var activeHtml = buildFuriganaInnerHTML(furiganaHtml, mainSyllables, lineDuration, Number(lineData.startTimeMs || 0));
+            if (textSpan.innerHTML !== activeHtml) {
+              textSpan.innerHTML = activeHtml;
+            }
+          } else {
+            // Inactive line: show clean original text (Kanji without ruby tags)
+            var cleanHtml = "";
+            if (mainSyllables.length > 0) {
+              for (var sIdx = 0; sIdx < mainSyllables.length; sIdx++) {
+                var s = mainSyllables[sIdx];
+                var nextS = mainSyllables[sIdx + 1];
+                var sEnd = s.durationMs ? (s.timeMs + s.durationMs) : (nextS ? nextS.timeMs : (lineData.startTimeMs + lineDuration));
+                if (!s.durationMs && !nextS) {
+                  sEnd = s.timeMs + Math.min(lineData.startTimeMs + lineDuration - s.timeMs, 1000);
+                }
+                if (sEnd <= s.timeMs) {
+                  sEnd = s.timeMs + 200;
+                }
+                cleanHtml += '<span class="syllable" data-start="' + s.timeMs + '" data-end="' + sEnd + '">' + escapeHtml(s.text) + '</span>';
+              }
+            } else {
+              cleanHtml = escapeHtml(lineData.text || "♪");
+            }
+            if (textSpan.innerHTML !== cleanHtml) {
+              textSpan.innerHTML = cleanHtml;
+            }
           }
         }
       }
@@ -377,13 +750,13 @@
       if (state.isFullLyricsMode) {
         html += '<article class="line ' + kind + " " + direction + " " + lengthClass + '"' +
           ' data-index="' + i + '">' +
-          buildLineInnerHTML(line, isActive) +
+          buildLineInnerHTML(line, isActive, state.lyrics[i + 1]) +
           "</article>";
       } else {
         html += '<article class="line ' + kind + " " + direction + " " + lengthClass + '"' +
           ' data-index="' + i + '"' +
           ' style="' + getDistanceStyle(distance) + '">' +
-          buildLineInnerHTML(line, isActive) +
+          buildLineInnerHTML(line, isActive, state.lyrics[i + 1]) +
           "</article>";
       }
     }
@@ -406,6 +779,7 @@
         }
       }
       fitFocusedFontSize();
+      updatePlaybackPosition();
     });
 
     report("render: active=" + active + " total=" + state.lyrics.length);
@@ -495,7 +869,7 @@
     setTrack: setTrack,
     setLyrics: setLyrics,
     setPlaybackState: setPlaybackState,
-    setShowRomaji: setShowRomaji,
+    setReadingMode: setReadingMode,
     setRightAligned: setRightAligned
   };
 
@@ -551,7 +925,7 @@
     setTrack: setTrack,
     setLyrics: setLyrics,
     setPlaybackState: setPlaybackState,
-    setShowRomaji: setShowRomaji,
+    setReadingMode: setReadingMode,
     setRightAligned: setRightAligned
   };
 

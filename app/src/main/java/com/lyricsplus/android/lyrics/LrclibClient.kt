@@ -31,12 +31,14 @@ class LrclibClient {
 
         val obj = JSONObject(response.body)
         val isInstrumental = obj.optBoolean("instrumental", false)
+        val enhanced = obj.optString("enhancedLyrics")
         val synced = obj.optString("syncedLyrics")
         
         val lyrics = if (isInstrumental) {
             listOf(LyricsLine(0L, "♪ 纯音乐 ♪"))
         } else {
-            parseSynced(synced) ?: return null
+            val lrcToParse = if (!enhanced.isNullOrBlank()) enhanced else synced
+            parseSynced(lrcToParse) ?: return null
         }
         
         val score = calculateScore(track, obj)
@@ -71,12 +73,14 @@ class LrclibClient {
         
         val best = bestCandidate ?: return null
         val isInstrumental = best.optBoolean("instrumental", false)
+        val enhanced = best.optString("enhancedLyrics")
         val synced = best.optString("syncedLyrics")
         
         val lyrics = if (isInstrumental) {
             listOf(LyricsLine(0L, "♪ 纯音乐 ♪"))
         } else {
-            parseSynced(synced) ?: return null
+            val lrcToParse = if (!enhanced.isNullOrBlank()) enhanced else synced
+            parseSynced(lrcToParse) ?: return null
         }
         
         return LyricsSearchResult(lyrics, bestScore)
