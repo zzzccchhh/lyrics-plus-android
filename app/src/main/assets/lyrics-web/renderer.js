@@ -30,6 +30,23 @@
   };
 
   var prevActiveIndex = -1;
+  var cachedActiveSyllables = [];
+
+  function recacheActiveSyllables() {
+    cachedActiveSyllables = [];
+    var activeLineEl = lyricsEl.querySelector(".line.active");
+    if (!activeLineEl) return;
+    
+    var syllables = activeLineEl.querySelectorAll(".syllable");
+    for (var i = 0; i < syllables.length; i++) {
+      var el = syllables[i];
+      cachedActiveSyllables.push({
+        el: el,
+        start: Number(el.getAttribute("data-start")) || 0,
+        end: Number(el.getAttribute("data-end")) || 0
+      });
+    }
+  }
 
   function report(message) {
     try {
@@ -243,22 +260,21 @@
         // Incremental update: patch styles and classes, no DOM rebuild
         patchFocusedMode();
       }
+      recacheActiveSyllables();
       report("playback: " + Math.round(currentPosition / 1000) + "s, active: " + state.activeIndex);
     }
     updateSyllableHighlights(currentPosition);
   }
 
   function updateSyllableHighlights(currentPosition) {
-    var activeLineEl = lyricsEl.querySelector(".line.active");
-    if (!activeLineEl) return;
-    
-    var syllables = activeLineEl.querySelectorAll(".syllable");
+    var syllables = cachedActiveSyllables;
     if (!syllables.length) return;
     
     for (var i = 0; i < syllables.length; i++) {
-      var el = syllables[i];
-      var start = Number(el.getAttribute("data-start")) || 0;
-      var end = Number(el.getAttribute("data-end")) || 0;
+      var item = syllables[i];
+      var el = item.el;
+      var start = item.start;
+      var end = item.end;
       
       if (currentPosition >= end) {
         if (el.className !== "syllable past") {
@@ -792,6 +808,7 @@
       }
       fitFocusedFontSize();
       updatePlaybackPosition();
+      recacheActiveSyllables();
     });
 
     report("render: active=" + active + " total=" + state.lyrics.length);
