@@ -290,12 +290,24 @@
   requestAnimationFrame(tick);
 
   function findActiveIndex(positionMs) {
+    var lyrics = state.lyrics;
+    var len = lyrics.length;
+    if (len === 0) return -1;
+    if (positionMs < Number(lyrics[0].startTimeMs || 0)) return 0;
+
+    var low = 0;
+    var high = len - 1;
     var result = 0;
-    for (var i = 0; i < state.lyrics.length; i += 1) {
-      if (positionMs >= Number(state.lyrics[i].startTimeMs || 0)) {
-        result = i;
+
+    while (low <= high) {
+      var mid = (low + high) >> 1;
+      var midTime = Number(lyrics[mid].startTimeMs || 0);
+
+      if (positionMs >= midTime) {
+        result = mid;
+        low = mid + 1;
       } else {
-        break;
+        high = mid - 1;
       }
     }
     return result;
