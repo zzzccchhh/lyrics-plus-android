@@ -42,8 +42,12 @@ class MainViewModel(
     application: Application
 ) : AndroidViewModel(application) {
     private val lyricsProvider: LyricsProvider = LyricsProvider.getInstance(application)
+    private val prefs = application.getSharedPreferences("lyrics_plus_prefs", Context.MODE_PRIVATE)
 
-    private val _uiState = MutableStateFlow(LyricsUiState())
+    private val _uiState = MutableStateFlow(LyricsUiState(
+        readingMode = prefs.getInt("reading_mode", 1),
+        keepScreenOn = prefs.getBoolean("keep_screen_on", false)
+    ))
     val uiState: StateFlow<LyricsUiState> = _uiState.asStateFlow()
 
     private var lyricsRequestKey: String? = null
@@ -427,11 +431,19 @@ class MainViewModel(
     }
 
     fun cycleReadingMode() {
-        _uiState.update { it.copy(readingMode = (it.readingMode + 1) % 3) }
+        _uiState.update { state ->
+            val nextMode = (state.readingMode + 1) % 3
+            prefs.edit().putInt("reading_mode", nextMode).apply()
+            state.copy(readingMode = nextMode)
+        }
     }
 
     fun toggleKeepScreenOn() {
-        _uiState.update { it.copy(keepScreenOn = !it.keepScreenOn) }
+        _uiState.update { state ->
+            val nextVal = !state.keepScreenOn
+            prefs.edit().putBoolean("keep_screen_on", nextVal).apply()
+            state.copy(keepScreenOn = nextVal)
+        }
     }
 
     fun checkForUpdates() {
