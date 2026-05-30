@@ -277,34 +277,15 @@ class MainViewModel(
             }
 
             // Background pre-fetching when starting a song in Auto mode
+            // This pre-warms the cache for other sources in the background,
+            // providing an instant "秒切" experience if the user toggles sources manually.
             if (targetSource == null && result.isSuccess) {
                 val resolvedSource = result.getOrNull()?.source
                 if (resolvedSource != null && resolvedSource != "纯音乐") {
                     val remainingSources = listOf("QQ音乐", "网易云音乐", "LRCLIB").filter { it != resolvedSource }
                     remainingSources.forEach { source ->
                         launch {
-                            val bgRes = lyricsProvider.findSyncedLyricsForSource(track, source)
-                            if (lyricsRequestKey != requestKey) return@launch
-                            
-                            bgRes.onSuccess { bgCache ->
-                                // If background source match has a strictly higher similarity score,
-                                // automatically swap the active lyrics and cache it permanently as SQLite default
-                                if (bgCache.score > currentLyricsScore) {
-                                    currentLyricsScore = bgCache.score
-                                    
-                                    // Save as new SQLite cached default
-                                    lyricsProvider.saveToCache(track, bgCache.lyrics, bgCache.source)
-                                    
-                                    // Update Compose UI
-                                    _uiState.update { state ->
-                                        state.copy(
-                                            lyrics = bgCache.lyrics,
-                                            activeLyricsSource = bgCache.source,
-                                            message = "Automatically optimized lyrics source: ${bgCache.source}"
-                                        )
-                                    }
-                                }
-                            }
+                            lyricsProvider.findSyncedLyricsForSource(track, source)
                         }
                     }
                 }
