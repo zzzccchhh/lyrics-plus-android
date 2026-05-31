@@ -12,6 +12,7 @@
   }
   var trackTitleEl = document.getElementById("trackTitle");
   var trackArtistEl = document.getElementById("trackArtist");
+  var vrrKeepaliveEl = document.getElementById("vrr-keepalive");
 
   var state = {
     track: null,
@@ -43,7 +44,9 @@
       cachedActiveSyllables.push({
         el: el,
         start: Number(el.getAttribute("data-start")) || 0,
-        end: Number(el.getAttribute("data-end")) || 0
+        end: Number(el.getAttribute("data-end")) || 0,
+        lastClass: "",
+        lastProgress: -1
       });
     }
   }
@@ -276,30 +279,44 @@
       var start = item.start;
       var end = item.end;
       
+      var targetClass = "syllable";
+      var progress = 0;
+      
       if (currentPosition >= end) {
-        if (el.className !== "syllable past") {
-          el.className = "syllable past";
-        }
-        el.style.setProperty("--progress", "100%");
+        targetClass = "syllable past";
+        progress = 100;
       } else if (currentPosition >= start && currentPosition < end) {
-        if (el.className !== "syllable active") {
-          el.className = "syllable active";
-        }
+        targetClass = "syllable active";
         var duration = end - start;
-        var progress = duration > 0 ? ((currentPosition - start) / duration) : 1;
-        el.style.setProperty("--progress", (progress * 100) + "%");
+        progress = duration > 0 ? Math.round(((currentPosition - start) / duration) * 100) : 100;
       } else {
-        if (el.className !== "syllable") {
-          el.className = "syllable";
-        }
-        el.style.setProperty("--progress", "0%");
+        targetClass = "syllable";
+        progress = 0;
+      }
+
+      // Write class name only when it changes
+      if (item.lastClass !== targetClass) {
+        el.className = targetClass;
+        item.lastClass = targetClass;
+      }
+
+      // Write CSS property only when progress changes
+      if (item.lastProgress !== progress) {
+        el.style.setProperty("--progress", progress + "%");
+        item.lastProgress = progress;
       }
     }
   }
 
+  var vrrToggle = false;
   function tick() {
     if (playback.isPlaying) {
       updatePlaybackPosition();
+      // Force high-refresh-rate scheduling on VRR mobile screens to keep transitions fluid
+      if (vrrKeepaliveEl) {
+        vrrToggle = !vrrToggle;
+        vrrKeepaliveEl.style.width = vrrToggle ? "1.1px" : "1.2px";
+      }
     }
     requestAnimationFrame(tick);
   }
@@ -807,8 +824,8 @@
         }
       }
       fitFocusedFontSize();
-      updatePlaybackPosition();
       recacheActiveSyllables();
+      updatePlaybackPosition();
     });
 
     report("render: active=" + active + " total=" + state.lyrics.length);

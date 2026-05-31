@@ -41,7 +41,7 @@ body {
   content: "";
   position: fixed;
   z-index: -1;
-  transition: all 1.2s ease-in-out;
+  transition: background-color 1.2s ease-in-out, opacity 1.2s ease-in-out;
   inset: -100px;
   background:
     radial-gradient(circle at 20% 30%, var(--bg-c) 0%, transparent 60%),
@@ -106,7 +106,6 @@ body {
   transition:
     transform 500ms cubic-bezier(0.22, 0.68, 0.35, 1),
     opacity 450ms cubic-bezier(0.22, 0.68, 0.35, 1);
-  will-change: transform, opacity;
 }
 
 .romaji {
@@ -185,7 +184,7 @@ body {
 }
 
 .line.far {
-  filter: blur(7px);
+  /* Removed expensive blur filter for far lines to prevent layout thrashing and GPU frame drops */
 }
 
 @media (min-width: 700px) {

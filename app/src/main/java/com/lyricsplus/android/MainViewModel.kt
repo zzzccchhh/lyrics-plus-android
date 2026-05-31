@@ -35,7 +35,8 @@ data class LyricsUiState(
     val readingMode: Int = 1, // 0=None, 1=Romaji, 2=Furigana
     val keepScreenOn: Boolean = false,
     val activeLyricsSource: String = "未加载",
-    val isInitializing: Boolean = true
+    val isInitializing: Boolean = true,
+    val showFloatingLyrics: Boolean = false
 )
 
 class MainViewModel(
@@ -46,7 +47,8 @@ class MainViewModel(
 
     private val _uiState = MutableStateFlow(LyricsUiState(
         readingMode = prefs.getInt("reading_mode", 1),
-        keepScreenOn = prefs.getBoolean("keep_screen_on", false)
+        keepScreenOn = prefs.getBoolean("keep_screen_on", false),
+        showFloatingLyrics = prefs.getBoolean("show_floating_lyrics", false)
     ))
     val uiState: StateFlow<LyricsUiState> = _uiState.asStateFlow()
 
@@ -70,6 +72,13 @@ class MainViewModel(
                     onMediaSessionUnavailable()
                 }
             }
+        }
+
+        val context = application
+        val startFloating = prefs.getBoolean("show_floating_lyrics", false)
+        if (startFloating && (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M || 
+                    android.provider.Settings.canDrawOverlays(context))) {
+            startFloatingService(context)
         }
     }
 
@@ -427,8 +436,50 @@ class MainViewModel(
         }
     }
 
+    fun toggleFloatingLyrics() {
+        val context = getApplication<Application>()
+        _uiState.update { state ->
+            val nextVal = !state.showFloatingLyrics
+            
+            if (nextVal) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && 
+                    !android.provider.Settings.canDrawOverlays(context)) {
+                    val intent = Intent(
+                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:${context.packageName}")
+                    ).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                    return@update state
+                }
+                
+                startFloatingService(context)
+            } else {
+                stopFloatingService(context)
+            }
+            
+            prefs.edit().putBoolean("show_floating_lyrics", nextVal).apply()
+            state.copy(showFloatingLyrics = nextVal)
+        }
+    }
+
+    private fun startFloatingService(context: Context) {
+        val intent = Intent(context, com.lyricsplus.android.lyrics.FloatingLyricsService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+    }
+
+    private fun stopFloatingService(context: Context) {
+        val intent = Intent(context, com.lyricsplus.android.lyrics.FloatingLyricsService::class.java)
+        context.stopService(intent)
+    }
+
     fun checkForUpdates() {
-        val currentVersion = "1.1.0"
+        val currentVersion = "1.2.0"
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 android.widget.Toast.makeText(getApplication(), "正在检查更新...", android.widget.Toast.LENGTH_SHORT).show()

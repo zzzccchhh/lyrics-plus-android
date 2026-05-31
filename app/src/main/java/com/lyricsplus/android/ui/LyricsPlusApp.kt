@@ -540,6 +540,13 @@ private fun LyricsOverlay(
                                     ) {
                                         viewModel.toggleKeepScreenOn()
                                     }
+                                    MenuActionRow(
+                                        label = if (state.showFloatingLyrics) "桌面悬浮歌词: 开启" else "桌面悬浮歌词: 关闭",
+                                        emoji = "📱",
+                                        active = state.showFloatingLyrics
+                                    ) {
+                                        viewModel.toggleFloatingLyrics()
+                                    }
                                     MenuActionRow(label = "项目地址(欢迎Star)", emoji = "⭐") {
                                         uriHandler.openUri("https://github.com/Artriai/lyrics-plus-android")
                                     }
@@ -584,6 +591,13 @@ private fun LyricsOverlay(
                                 active = state.keepScreenOn
                             ) {
                                 viewModel.toggleKeepScreenOn()
+                            }
+                            MenuActionRow(
+                                label = if (state.showFloatingLyrics) "桌面悬浮歌词: 开启" else "桌面悬浮歌词: 关闭",
+                                emoji = "📱",
+                                active = state.showFloatingLyrics
+                            ) {
+                                viewModel.toggleFloatingLyrics()
                             }
                             MenuActionRow(label = "检查更新", emoji = "🚀") {
                                 viewModel.checkForUpdates()

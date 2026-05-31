@@ -23,6 +23,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Request 120Hz high refresh rate natively for fluid animations on VRR screens
+        val windowParams = window.attributes
+        windowParams.preferredRefreshRate = 120f
+        window.attributes = windowParams
+
         // Edge-to-edge: let the app render behind system bars and cutouts
         // so Compose and WebView can handle safe area insets themselves.
         enableEdgeToEdge()
