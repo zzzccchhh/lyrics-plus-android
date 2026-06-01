@@ -1,31 +1,34 @@
 package com.lyricsplus.android.ui
 
-import android.content.Context
-import android.content.Intent
-import android.os.Build
-import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.composed
 import com.lyricsplus.android.data.LyricsLine
 import com.lyricsplus.android.lyrics.FloatingLyricsService
 
@@ -58,13 +62,18 @@ fun FloatingLyricsView(
     onDrag: (Float, Float) -> Unit
 ) {
     var isExpanded by remember { mutableStateOf(false) }
+    val presets = remember { listOf("#FFFFFF", "#4AD295", "#F06AA5", "#3FA9F5") }
+    var showColorPicker by remember { mutableStateOf(service.textColorHex !in presets) }
 
-    val track = service.currentTrack
-    val lyrics = service.currentLyrics
-    val estimatedTime = service.estimatedPositionMs + service.lyricsOffsetMs
-    
-    val activeIndex = findActiveIndex(estimatedTime, lyrics)
-    val activeLine = lyrics.getOrNull(activeIndex)
+    var showControls by remember { mutableStateOf(true) }
+    var interactionTrigger by remember { mutableStateOf(0) }
+
+    // Auto-hide controls after 2 seconds of inactivity
+    androidx.compose.runtime.LaunchedEffect(interactionTrigger) {
+        showControls = true
+        kotlinx.coroutines.delay(2000)
+        showControls = false
+    }
 
     val backgroundOpacity = service.backgroundOpacity
     val textSizeSp = service.textSizeSp
@@ -77,57 +86,51 @@ fun FloatingLyricsView(
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Main floating bar
+        // Main floating bar — drag gesture covers the entire bar surface
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(Color(0xE6101211).copy(alpha = backgroundOpacity))
-                .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(14.dp))
+                .border(1.dp, if (backgroundOpacity > 0f) Color(0x0DFFFFFF) else Color.Transparent, RoundedCornerShape(14.dp))
+                .then(
+                    if (!isLocked) {
+                        Modifier
+                            .pointerInput(isLocked) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    onDrag(dragAmount.x, dragAmount.y)
+                                    interactionTrigger++ // Reset timer on drag
+                                }
+                            }
+                            .pointerInput(isLocked) {
+                                detectTapGestures(
+                                    onTap = {
+                                        interactionTrigger++ // Show controls on tap
+                                    },
+                                    onDoubleTap = {
+                                        service.togglePlayback()
+                                        interactionTrigger++ // Reset timer
+                                    }
+                                )
+                            }
+                    } else {
+                        Modifier.pointerInput(isLocked) {
+                            detectTapGestures(
+                                onTap = {
+                                    interactionTrigger++ // Show controls on tap
+                                },
+                                onDoubleTap = {
+                                    service.togglePlayback()
+                                    interactionTrigger++ // Reset timer
+                                }
+                            )
+                        }
+                    }
+                )
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag handle (Left ⋮⋮)
-            if (!isLocked) {
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                onDrag(dragAmount.x, dragAmount.y)
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "⋮⋮",
-                        color = Color(0x66FFFFFF),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            } else {
-                // When locked, show a tiny unlock ghost button
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .background(Color(0x26FFFFFF), CircleShape)
-                        .clickable {
-                            service.isLocked = false
-                            service.updateWindowTouchability(touchable = true)
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "🔒",
-                        fontSize = 13.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
             // Lyric active line presentation (Hardware accelerated sweep)
             Box(
                 modifier = Modifier
@@ -135,103 +138,116 @@ fun FloatingLyricsView(
                     .padding(horizontal = 4.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
-                if (track == null) {
-                    Text(
-                        text = "等待 Spotify 播放音乐...",
-                        color = Color(0xB3FFFFFF),
-                        fontSize = textSizeSp.sp,
-                        fontWeight = FontWeight.Black,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                } else if (activeLine == null) {
-                    Text(
-                        text = "纯音乐 / 搜索歌词中...",
-                        color = Color(0xB3FFFFFF),
-                        fontSize = textSizeSp.sp,
-                        fontWeight = FontWeight.Black,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                } else {
-                    val syllables = remember(activeLine.text, activeLine.startTimeMs) {
-                        parseSyllables(activeLine.text, activeLine.startTimeMs)
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Start,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        syllables.forEach { syllable ->
-                            SyllableTextSweep(
-                                syllable = syllable,
-                                currentTimeMs = estimatedTime,
-                                textSizeSp = textSizeSp,
-                                textColor = textColor
-                            )
-                        }
-                    }
-                }
+                ActiveLyricPresenter(
+                    service = service,
+                    textSizeSp = textSizeSp,
+                    textColor = textColor
+                )
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Control buttons (⚙, 🔒/🔓, ✕)
-            if (!isLocked) {
+            // Control icons - animated fade out with premium monochrome translucent styling
+            AnimatedVisibility(
+                visible = showControls,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Lock overlay button
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .background(Color(0x1AFFFFFF), CircleShape)
-                            .clickable {
-                                service.isLocked = true
-                                service.updateWindowTouchability(touchable = false)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "🔓", fontSize = 12.sp)
-                    }
+                    if (isLocked) {
+                        // Locked: show a small unlock icon
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x33FFFFFF)) // Misty white background
+                                .noRippleClickable {
+                                    service.isLocked = false
+                                    interactionTrigger++
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Lock,
+                                contentDescription = "解锁",
+                                modifier = Modifier.size(12.dp),
+                                tint = Color.White
+                            )
+                        }
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            // Lock button
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0x33FFFFFF)) // Misty white background
+                                    .noRippleClickable {
+                                        service.isLocked = true
+                                        interactionTrigger++
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Lock,
+                                    contentDescription = "锁定",
+                                    modifier = Modifier.size(12.dp),
+                                    tint = Color.White
+                                )
+                            }
 
-                    // Toggle expand settings button
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .background(if (isExpanded) Color(0xFF4AD295) else Color(0x1AFFFFFF), CircleShape)
-                            .clickable { isExpanded = !isExpanded },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (isExpanded) "✕" else "⚙",
-                            color = if (isExpanded) Color.Black else Color.White,
-                            fontSize = 12.sp
-                        )
-                    }
+                            // Settings toggle
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isExpanded) Color(0x66FFFFFF) else Color(0x33FFFFFF)
+                                    )
+                                    .noRippleClickable {
+                                        isExpanded = !isExpanded
+                                        interactionTrigger++
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Rounded.Close else Icons.Rounded.Settings,
+                                    contentDescription = "设置",
+                                    modifier = Modifier.size(12.dp),
+                                    tint = Color.White
+                                )
+                            }
 
-                    // Close overlay button
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .background(Color(0x33FF5555), CircleShape)
-                            .clickable { onClose() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "✕", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            // Close button
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0x33FFFFFF)) // Misty white background
+                                    .noRippleClickable {
+                                        onClose()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "关闭",
+                                    modifier = Modifier.size(12.dp),
+                                    tint = Color.White
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // Expanded Settings Panel
-        AnimatedVisibility(
-            visible = isExpanded && !isLocked,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
+        // Expanded Settings Panel - Instant toggle avoids expensive frame-by-frame WindowManager layout updates
+        if (isExpanded && !isLocked) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -256,7 +272,7 @@ fun FloatingLyricsView(
                         Box(
                             modifier = Modifier
                                 .background(Color(0x33FFFFFF), RoundedCornerShape(6.dp))
-                                .clickable {
+                                .noRippleClickable {
                                     if (service.textSizeSp > 12f) {
                                         service.textSizeSp -= 1f
                                         service.savePrefs()
@@ -270,7 +286,7 @@ fun FloatingLyricsView(
                         Box(
                             modifier = Modifier
                                 .background(Color(0x33FFFFFF), RoundedCornerShape(6.dp))
-                                .clickable {
+                                .noRippleClickable {
                                     if (service.textSizeSp < 26f) {
                                         service.textSizeSp += 1f
                                         service.savePrefs()
@@ -297,9 +313,9 @@ fun FloatingLyricsView(
                         Box(
                             modifier = Modifier
                                 .background(Color(0x33FFFFFF), RoundedCornerShape(6.dp))
-                                .clickable {
-                                    if (service.backgroundOpacity > 0.15f) {
-                                        service.backgroundOpacity -= 0.1f
+                                .noRippleClickable {
+                                    if (service.backgroundOpacity > 0.05f) {
+                                        service.backgroundOpacity = (service.backgroundOpacity - 0.1f).coerceAtLeast(0f)
                                         service.savePrefs()
                                     }
                                 }
@@ -311,7 +327,7 @@ fun FloatingLyricsView(
                         Box(
                             modifier = Modifier
                                 .background(Color(0x33FFFFFF), RoundedCornerShape(6.dp))
-                                .clickable {
+                                .noRippleClickable {
                                     if (service.backgroundOpacity < 0.95f) {
                                         service.backgroundOpacity += 0.1f
                                         service.savePrefs()
@@ -332,7 +348,8 @@ fun FloatingLyricsView(
                 ) {
                     Text(text = "字体颜色", color = Color(0xB3FFFFFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         val colorsMap = mapOf(
                             "#FFFFFF" to Color.White,
@@ -340,7 +357,9 @@ fun FloatingLyricsView(
                             "#F06AA5" to Color(0xFFF06AA5),
                             "#3FA9F5" to Color(0xFF3FA9F5)
                         )
-                        colorsMap.forEach { (hex, color) ->
+                        // Render presets
+                        presets.forEach { hex ->
+                            val color = colorsMap[hex] ?: Color.White
                             Box(
                                 modifier = Modifier
                                     .size(20.dp)
@@ -350,54 +369,184 @@ fun FloatingLyricsView(
                                         color = if (service.textColorHex == hex) Color.Black else Color.Transparent,
                                         shape = CircleShape
                                     )
-                                    .clickable {
+                                    .noRippleClickable {
+                                        showColorPicker = false
                                         service.textColorHex = hex
                                         service.savePrefs()
                                     }
                             )
                         }
+
+                        // Custom color picker toggle button (palette emoji/rainbow background)
+                        val isCustomSelected = service.textColorHex !in presets
+                        val customColor = if (isCustomSelected) textColor else Color(0xFFE040FB)
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .background(customColor, CircleShape)
+                                .border(
+                                    width = if (isCustomSelected) 2.dp else 0.dp,
+                                    color = if (isCustomSelected) Color.Black else Color.Transparent,
+                                    shape = CircleShape
+                                )
+                                .noRippleClickable {
+                                    showColorPicker = !showColorPicker
+                                    if (!isCustomSelected) {
+                                        // Default custom color (e.g. vivid pink/orange)
+                                        service.textColorHex = "#FF55AA"
+                                        service.savePrefs()
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "🎨",
+                                fontSize = 10.sp
+                            )
+                        }
                     }
                 }
 
-                // Row 4: Lyrics Offset adjustment
+                // Inline Custom Color Pick Sliders (R, G, B)
+                if (showColorPicker) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp, bottom = 4.dp)
+                            .background(Color(0x13FFFFFF), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        val hex = service.textColorHex.removePrefix("#")
+                        val currentR = runCatching { hex.substring(0, 2).toInt(16) }.getOrDefault(255)
+                        val currentG = runCatching { hex.substring(2, 4).toInt(16) }.getOrDefault(255)
+                        val currentB = runCatching { hex.substring(4, 6).toInt(16) }.getOrDefault(255)
+
+                        ColorSliderRow(label = "红", value = currentR, color = Color(0xFFFF5252)) { newR ->
+                            val newHex = String.format("#%02X%02X%02X", newR, currentG, currentB)
+                            service.textColorHex = newHex
+                            service.savePrefs()
+                        }
+                        ColorSliderRow(label = "绿", value = currentG, color = Color(0xFF66BB6A)) { newG ->
+                            val newHex = String.format("#%02X%02X%02X", currentR, newG, currentB)
+                            service.textColorHex = newHex
+                            service.savePrefs()
+                        }
+                        ColorSliderRow(label = "蓝", value = currentB, color = Color(0xFF29B6F6)) { newB ->
+                            val newHex = String.format("#%02X%02X%02X", currentR, currentG, newB)
+                            service.textColorHex = newHex
+                            service.savePrefs()
+                        }
+                    }
+                }
+
+                // Row 4: Display Mode Selection (Original / Translation)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val offsetSec = service.lyricsOffsetMs / 1000.0
-                    val offsetText = if (service.lyricsOffsetMs > 0) "+${offsetSec}s" else if (service.lyricsOffsetMs < 0) "${offsetSec}s" else "0.0s"
-                    Text(text = "歌词微调 [$offsetText]", color = Color(0xB3FFFFFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(text = "显示内容", color = Color(0xB3FFFFFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0x33FFFFFF), RoundedCornerShape(6.dp))
-                                .clickable { service.lyricsOffsetMs -= 500 },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = " 🐰 -0.5s ", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp))
-                        }
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0x33FFFFFF), RoundedCornerShape(6.dp))
-                                .clickable { service.lyricsOffsetMs = 0L },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = " 🔄 重置 ", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp))
-                        }
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0x33FFFFFF), RoundedCornerShape(6.dp))
-                                .clickable { service.lyricsOffsetMs += 500 },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = " 🐢 +0.5s ", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp))
+                        val modes = listOf("原文", "翻译")
+                        modes.forEachIndexed { index, name ->
+                            val isSelected = service.displayMode == index
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        if (isSelected) Color(0xFF4AD295) else Color(0x33FFFFFF),
+                                        RoundedCornerShape(6.dp)
+                                    )
+                                    .noRippleClickable {
+                                        service.displayMode = index
+                                        service.savePrefs()
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = name,
+                                    color = if (isSelected) Color.Black else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ActiveLyricPresenter(
+    service: FloatingLyricsService,
+    textSizeSp: Float,
+    textColor: Color
+) {
+    val track = service.currentTrack
+    val lyrics = service.currentLyrics
+    val estimatedTime = service.estimatedPositionMs + service.lyricsOffsetMs
+    
+    val activeIndex = findActiveIndex(estimatedTime, lyrics)
+    val activeLine = lyrics.getOrNull(activeIndex)
+
+    if (track == null) {
+        Text(
+            text = "等待 Spotify 播放音乐...",
+            color = Color(0xB3FFFFFF),
+            fontSize = textSizeSp.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    } else if (lyrics.isNotEmpty() && estimatedTime < lyrics[0].startTimeMs) {
+        // Intro phase: show song title and artist in high visibility active text color
+        Text(
+            text = "${track.track} - ${track.artist}",
+            color = textColor,
+            fontSize = textSizeSp.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    } else if (activeLine == null) {
+        Text(
+            text = "纯音乐 / 无歌词",
+            color = Color(0xB3FFFFFF),
+            fontSize = textSizeSp.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    } else {
+        val activeText = when (service.displayMode) {
+            1 -> if (!activeLine.translation.isNullOrBlank()) activeLine.translation else activeLine.text
+            2 -> if (!activeLine.reading.isNullOrBlank()) activeLine.reading else activeLine.text
+            else -> activeLine.text
+        }
+
+        val syllables = remember(activeText, activeLine.startTimeMs) {
+            parseSyllables(activeText, activeLine.startTimeMs)
+        }
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
+            maxLines = 2
+        ) {
+            syllables.forEach { syllable ->
+                SyllableTextSweep(
+                    syllable = syllable,
+                    currentTimeMs = estimatedTime,
+                    textSizeSp = textSizeSp,
+                    textColor = textColor
+                )
             }
         }
     }
@@ -452,7 +601,7 @@ fun SyllableTextSweep(
 
 fun findActiveIndex(positionMs: Long, lyrics: List<LyricsLine>): Int {
     if (lyrics.isEmpty()) return -1
-    if (positionMs < lyrics[0].startTimeMs) return 0
+    if (positionMs < lyrics[0].startTimeMs) return -1
     var low = 0
     var high = lyrics.size - 1
     var result = 0
@@ -532,3 +681,40 @@ fun parseSyllables(lineText: String, lineStartTime: Long): List<Syllable> {
 
     return syllables
 }
+
+@Composable
+fun ColorSliderRow(
+    label: String,
+    value: Int,
+    color: Color,
+    onValueChange: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(16.dp))
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onValueChange(it.toInt()) },
+            valueRange = 0f..255f,
+            modifier = Modifier.weight(1f),
+            colors = SliderDefaults.colors(
+                thumbColor = color,
+                activeTrackColor = color.copy(alpha = 0.5f),
+                inactiveTrackColor = Color(0x22FFFFFF)
+            )
+        )
+        Text(text = String.format("%02X", value), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(24.dp))
+    }
+}
+
+fun Modifier.noRippleClickable(onClick: () -> Unit): Modifier = composed {
+    this.clickable(
+        interactionSource = remember { MutableInteractionSource() },
+        indication = null,
+        onClick = onClick
+    )
+}
+

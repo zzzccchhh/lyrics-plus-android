@@ -125,7 +125,17 @@ private fun LyricsOverlay(
         webController.pushPlayback(state.playback.currentPositionMs() + state.lyricsOffsetMs, state.playback.isPlaying)
     }
 
+    // Throttle playback pushes to WebView: the JS renderer extrapolates position
+    // via performance.now(), so we only need periodic sync updates (~150ms minimum interval)
+    // to avoid overwhelming the JS bridge and competing with the rendering tick loop.
+    var lastPlaybackPushMs by remember { mutableStateOf(0L) }
     LaunchedEffect(webController.isReady, state.playback, state.lyricsOffsetMs) {
+        val now = SystemClock.elapsedRealtime()
+        val elapsed = now - lastPlaybackPushMs
+        if (elapsed < 150L) {
+            delay(150L - elapsed)
+        }
+        lastPlaybackPushMs = SystemClock.elapsedRealtime()
         webController.pushPlayback(state.playback.currentPositionMs() + state.lyricsOffsetMs, state.playback.isPlaying)
     }
 

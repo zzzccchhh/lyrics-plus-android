@@ -91,9 +91,9 @@ body {
   flex-direction: column;
   align-items: flex-start;
   transition: transform 550ms cubic-bezier(0.22, 0.68, 0.35, 1);
-  perspective: 900px;
   z-index: 4;
   will-change: transform;
+  contain: layout style;
 }
 
 .line {
@@ -106,6 +106,8 @@ body {
   transition:
     transform 500ms cubic-bezier(0.22, 0.68, 0.35, 1),
     opacity 450ms cubic-bezier(0.22, 0.68, 0.35, 1);
+  will-change: transform, opacity;
+  contain: content;
 }
 
 .romaji {
@@ -184,7 +186,7 @@ body {
 }
 
 .line.far {
-  /* Removed expensive blur filter for far lines to prevent layout thrashing and GPU frame drops */
+  filter: blur(7px);
 }
 
 @media (min-width: 700px) {

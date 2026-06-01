@@ -312,10 +312,15 @@
   function tick() {
     if (playback.isPlaying) {
       updatePlaybackPosition();
-      // Force high-refresh-rate scheduling on VRR mobile screens to keep transitions fluid
+      // Force 120Hz compositor scheduling on VRR Android screens.
+      // Two signals are needed to convince the WebView compositor every frame has work:
+      //   1. transform (compositor-only, no layout/paint) — matched by will-change:transform
+      //   2. opacity micro-alternation (pixel-level change) — forces actual pixel diff
+      // Together they prevent the WebView from throttling RAF to 60Hz.
       if (vrrKeepaliveEl) {
         vrrToggle = !vrrToggle;
-        vrrKeepaliveEl.style.width = vrrToggle ? "1.1px" : "1.2px";
+        vrrKeepaliveEl.style.transform = vrrToggle ? "translateX(0.5px)" : "translateX(0px)";
+        vrrKeepaliveEl.style.opacity = vrrToggle ? "0.015" : "0.01";
       }
     }
     requestAnimationFrame(tick);
@@ -467,12 +472,15 @@
       .replace(/\(\d+,\d+(?:,\d+)?\)/g, "");
   }
 
-  function buildFuriganaInnerHTML(furiganaHtml, syllables, lineDuration, lineStartTime) {
+  function buildFuriganaInnerHTML(furiganaHtml, syllables, lineDuration, lineStartTime, isPast) {
     if (!furiganaHtml) return "";
     var tokens = furiganaHtml.match(/<ruby>.*?<\/ruby>|[^<>]/g) || [];
     if (syllables.length === 0) return furiganaHtml;
 
     var html = "";
+    var className = isPast ? "syllable past" : "syllable";
+    var progressStyle = isPast ? ' style="--progress: 100%"' : '';
+
     for (var i = 0; i < tokens.length; i++) {
       var sIdx = Math.floor(i * syllables.length / tokens.length);
       if (sIdx >= syllables.length) sIdx = syllables.length - 1;
@@ -491,12 +499,12 @@
         sEnd = s.timeMs + 200;
       }
 
-      html += '<span class="syllable" data-start="' + s.timeMs + '" data-end="' + sEnd + '">' + tokens[i] + '</span>';
+      html += '<span class="' + className + '" data-start="' + s.timeMs + '" data-end="' + sEnd + '"' + progressStyle + '>' + tokens[i] + '</span>';
     }
     return html;
   }
 
-  function buildRomajiInnerHTML(romajiText, lineStartTime, nextLine, mainSyllables) {
+  function buildRomajiInnerHTML(romajiText, lineStartTime, nextLine, mainSyllables, isPast) {
     if (!romajiText) return "";
     // If the Romaji text only contains timing tags and no actual letters/words, discard it
     var clean = romajiText.replace(/\(\d+,\d+(?:,\d+)?\)/g, "").trim();
@@ -504,6 +512,9 @@
 
     var romajiSyllables = parseSyllables(romajiText, lineStartTime);
     var html = "";
+    var className = isPast ? "syllable past" : "syllable";
+    var progressStyle = isPast ? ' style="--progress: 100%"' : '';
+
     if (romajiSyllables.length > 0) {
       var lineDuration = nextLine ? (nextLine.startTimeMs - lineStartTime) : 4000;
       for (var sIdx = 0; sIdx < romajiSyllables.length; sIdx++) {
@@ -517,7 +528,7 @@
           sEnd = s.timeMs + 200;
         }
         var spacer = sIdx === romajiSyllables.length - 1 ? "" : " ";
-        html += '<span class="syllable" data-start="' + s.timeMs + '" data-end="' + sEnd + '">' + escapeHtml(s.text) + '</span>' + spacer;
+        html += '<span class="' + className + '" data-start="' + s.timeMs + '" data-end="' + sEnd + '"' + progressStyle + '>' + escapeHtml(s.text) + '</span>' + spacer;
       }
     } else if (mainSyllables && mainSyllables.length > 0) {
       var tokens = romajiText.trim().split(/\s+/);
@@ -540,7 +551,7 @@
         }
 
         var spacer = i === tokens.length - 1 ? "" : " ";
-        html += '<span class="syllable" data-start="' + s.timeMs + '" data-end="' + sEnd + '">' + escapeHtml(tokens[i]) + '</span>' + spacer;
+        html += '<span class="' + className + '" data-start="' + s.timeMs + '" data-end="' + sEnd + '"' + progressStyle + '>' + escapeHtml(tokens[i]) + '</span>' + spacer;
       }
     } else {
       html = escapeHtml(romajiText);
@@ -548,7 +559,7 @@
     return html;
   }
 
-  function buildLineInnerHTML(line, isActive, nextLine) {
+  function buildLineInnerHTML(line, isActive, nextLine, isPast) {
     var parsedReading = null;
     if (line.reading) {
       try {
@@ -575,9 +586,11 @@
 
     if (showFurigana) {
       // 1. Furigana mode: Use raw HTML containing <ruby> tags (with word-level sweeps if matched)
-      lineTextHtml = buildFuriganaInnerHTML(furiganaHtml, syllables, lineDuration, Number(line.startTimeMs || 0));
+      lineTextHtml = buildFuriganaInnerHTML(furiganaHtml, syllables, lineDuration, Number(line.startTimeMs || 0), isPast);
     } else if (syllables.length > 0) {
       // 2. Karaoke mode: Syllable-level enhanced LRC highlights
+      var className = isPast ? "syllable past" : "syllable";
+      var progressStyle = isPast ? ' style="--progress: 100%"' : '';
       for (var sIdx = 0; sIdx < syllables.length; sIdx++) {
         var s = syllables[sIdx];
         var nextS = syllables[sIdx + 1];
@@ -588,7 +601,7 @@
         if (sEnd <= s.timeMs) {
           sEnd = s.timeMs + 200;
         }
-        lineTextHtml += '<span class="syllable" data-start="' + s.timeMs + '" data-end="' + sEnd + '">' + escapeHtml(s.text) + '</span>';
+        lineTextHtml += '<span class="' + className + '" data-start="' + s.timeMs + '" data-end="' + sEnd + '"' + progressStyle + '>' + escapeHtml(s.text) + '</span>';
       }
     } else {
       // 3. Standard line-level text
@@ -605,7 +618,7 @@
     var readingHtml = "";
     if (state.readingMode === 1 && romajiText) {
       if (state.isFullLyricsMode || isActive) {
-        readingHtml = '<span class="romaji">' + buildRomajiInnerHTML(romajiText, Number(line.startTimeMs || 0), nextLine, syllables) + "</span>";
+        readingHtml = '<span class="romaji">' + buildRomajiInnerHTML(romajiText, Number(line.startTimeMs || 0), nextLine, syllables, isPast) + "</span>";
       }
     }
 
@@ -629,13 +642,27 @@
     if (!lines.length) return;
 
     var isSeek = prevActive === -1 || Math.abs(active - prevActive) > 3;
+    var totalLines = lines.length;
 
-    for (var i = 0; i < lines.length; i += 1) {
+    // Narrow the iteration range: only update lines whose visual state actually changed
+    var loopStart, loopEnd;
+    if (isSeek) {
+      loopStart = 0;
+      loopEnd = totalLines - 1;
+    } else {
+      // Only lines near prevActive and active need updates
+      loopStart = Math.max(0, Math.min(prevActive, active) - 2);
+      loopEnd = Math.min(totalLines - 1, Math.max(prevActive, active) + 2);
+    }
+
+    var hasReadingMode = state.readingMode > 0;
+
+    for (var i = loopStart; i <= loopEnd; i += 1) {
       var distance = i - active;
 
       if (!isSeek) {
         var prevDistance = i - prevActive;
-        // Skip updating far past and far future elements that didn't change state
+        // Skip elements that didn't change state
         if ((prevDistance > 1 && distance > 1) || (prevDistance < 0 && distance < 0)) {
           continue;
         }
@@ -666,9 +693,19 @@
         }
       }
 
-      // Update romaji visibility: show only on active line in focused mode
+      // Skip expensive reading/furigana processing if readingMode is off or line has no reading data
+      if (!hasReadingMode || !lineData || !lineData.reading) {
+        // Still remove stale romaji spans if reading mode was just turned off
+        if (!hasReadingMode) {
+          var existingRomaji = el.querySelector(".romaji");
+          if (existingRomaji) existingRomaji.remove();
+        }
+        continue;
+      }
+
+      // --- Reading data processing (only reached when readingMode > 0 AND lineData.reading exists) ---
       var parsedReading = null;
-      if (lineData && lineData.reading) {
+      if (lineData.reading) {
         try {
           if (lineData.reading.startsWith("{")) {
             parsedReading = JSON.parse(lineData.reading);
@@ -710,14 +747,6 @@
       // Update Furigana annotations dynamically in focused mode (show only on active line)
       var textSpan = el.querySelector(".text");
       if (textSpan && state.readingMode === 2 && lineData) {
-        var parsedReading = null;
-        if (lineData.reading) {
-          try {
-            if (lineData.reading.startsWith("{")) {
-              parsedReading = JSON.parse(lineData.reading);
-            }
-          } catch (e) {}
-        }
         var furiganaHtml = parsedReading ? (parsedReading.furigana || "") : "";
         if (furiganaHtml) {
           var mainSyllables = parseSyllables(lineData.text || "", Number(lineData.startTimeMs || 0));
@@ -795,13 +824,13 @@
       if (state.isFullLyricsMode) {
         html += '<article class="line ' + kind + " " + direction + " " + lengthClass + '"' +
           ' data-index="' + i + '">' +
-          buildLineInnerHTML(line, isActive, state.lyrics[i + 1]) +
+          buildLineInnerHTML(line, isActive, state.lyrics[i + 1], distance < 0) +
           "</article>";
       } else {
         html += '<article class="line ' + kind + " " + direction + " " + lengthClass + '"' +
           ' data-index="' + i + '"' +
           ' style="' + getDistanceStyle(distance) + '">' +
-          buildLineInnerHTML(line, isActive, state.lyrics[i + 1]) +
+          buildLineInnerHTML(line, isActive, state.lyrics[i + 1], distance < 0) +
           "</article>";
       }
     }

@@ -412,6 +412,21 @@ class MainViewModel(
                         }
                     )
                 }
+
+                // Notify FloatingLyricsService to refresh the lyrics if running
+                val prefs = getApplication<android.app.Application>().getSharedPreferences("lyrics_plus_prefs", Context.MODE_PRIVATE)
+                if (prefs.getBoolean("show_floating_lyrics", false)) {
+                    val intent = Intent(getApplication(), com.lyricsplus.android.lyrics.FloatingLyricsService::class.java).apply {
+                        action = com.lyricsplus.android.lyrics.FloatingLyricsService.ACTION_REFRESH_LYRICS
+                    }
+                    runCatching {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            getApplication<android.app.Application>().startForegroundService(intent)
+                        } else {
+                            getApplication<android.app.Application>().startService(intent)
+                        }
+                    }
+                }
             }
         }
     }
@@ -642,6 +657,11 @@ class MainViewModel(
     }
 
     fun syncNow() {
+        // Sync floating lyrics preference state with UI instantly
+        _uiState.update { it.copy(
+            showFloatingLyrics = prefs.getBoolean("show_floating_lyrics", false)
+        ) }
+        
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val reader = com.lyricsplus.android.spotify.SpotifyMediaSessionReader(getApplication())
             val snapshot = reader.readSnapshot()

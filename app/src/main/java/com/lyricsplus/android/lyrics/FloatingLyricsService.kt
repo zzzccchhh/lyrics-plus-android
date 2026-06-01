@@ -5,9 +5,13 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.media.session.MediaController
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
@@ -83,11 +87,14 @@ class FloatingLyricsService : Service() {
     var currentPlayback by mutableStateOf<PlaybackAnchor?>(null)
     var lyricsOffsetMs by mutableStateOf(0L)
     var readingMode by mutableStateOf(1)
+    var displayMode by mutableStateOf(0) // 0=Original, 1=Translation, 2=Romaji
     var isLocked by mutableStateOf(false)
     var textSizeSp by mutableStateOf(15f)
     var backgroundOpacity by mutableStateOf(0.7f)
     var textColorHex by mutableStateOf("#FFFFFF")
     var estimatedPositionMs by mutableLongStateOf(0L)
+    private var visualOffsetMs = 0L
+    private var resumeTimeMs = 0L
 
     private var tickJob: kotlinx.coroutines.Job? = null
     private var trackRequestKey: String? = null
@@ -103,6 +110,7 @@ class FloatingLyricsService : Service() {
         // Load persisted settings
         val prefs = getSharedPreferences("lyrics_plus_prefs", Context.MODE_PRIVATE)
         readingMode = prefs.getInt("reading_mode", 1)
+        displayMode = prefs.getInt("floating_display_mode", 0)
         textSizeSp = prefs.getFloat("floating_text_size", 15f)
         backgroundOpacity = prefs.getFloat("floating_bg_opacity", 0.7f)
         textColorHex = prefs.getString("floating_text_color", "#FFFFFF") ?: "#FFFFFF"
@@ -116,8 +124,9 @@ class FloatingLyricsService : Service() {
         // Unlock action sent from notification click
         if (intent?.action == ACTION_UNLOCK) {
             isLocked = false
-            updateWindowTouchability(touchable = true)
             updateNotification("悬浮歌词已解锁，点击可移动")
+        } else if (intent?.action == ACTION_REFRESH_LYRICS) {
+            currentTrack?.let { fetchLyricsInBackground(it) }
         }
         return START_STICKY
     }
@@ -126,6 +135,11 @@ class FloatingLyricsService : Service() {
         tickJob?.cancel()
         serviceScope.cancel()
         removeOverlayWindow()
+        
+        // Update persistent setting preference to false upon close
+        val prefs = getSharedPreferences("lyrics_plus_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("show_floating_lyrics", false).apply()
+        
         super.onDestroy()
     }
 
@@ -215,16 +229,67 @@ class FloatingLyricsService : Service() {
                     val playback = snapshot.playback
 
                     if (track != null && track.hasTrack) {
-                        currentTrack = track
                         val key = listOf(track.track, track.artist, track.album, track.durationSeconds).joinToString("|")
                         if (trackRequestKey != key) {
                             trackRequestKey = key
+                            // Instant reset to avoid flashing stale lyric lines of the previous song
+                            currentLyrics = emptyList()
+                            estimatedPositionMs = 0L
+                            visualOffsetMs = 0L
+                            resumeTimeMs = 0L
+                            currentTrack = track
                             fetchLyricsInBackground(track)
+                        } else {
+                            currentTrack = track
                         }
                     }
 
                     if (playback != null) {
-                        currentPlayback = playback
+                        val prev = currentPlayback
+                        val wasPlaying = prev?.isPlaying == true
+                        val isNowPlaying = playback.isPlaying
+
+                        if (isNowPlaying) {
+                            if (!wasPlaying) {
+                                // Transition from paused to playing: smoothly transition/decay the visual offset
+                                val frozenPos = prev?.positionMs ?: playback.positionMs
+                                val diff = frozenPos - playback.positionMs
+                                visualOffsetMs = if (Math.abs(diff) < 1500L) diff else 0L
+                                resumeTimeMs = SystemClock.elapsedRealtime()
+                                currentPlayback = playback
+                            } else {
+                                // Already playing
+                                currentPlayback = playback
+                            }
+                        } else {
+                            if (wasPlaying) {
+                                // Transition from playing to paused: freeze visually at extrapolated position
+                                val elapsed = SystemClock.elapsedRealtime() - (prev?.capturedElapsedMs ?: SystemClock.elapsedRealtime())
+                                val extrapolated = (prev?.positionMs ?: 0L) + elapsed
+                                val diff = extrapolated - playback.positionMs
+                                val frozenPos = if (Math.abs(diff) < 1500L) extrapolated else playback.positionMs
+                                
+                                currentPlayback = PlaybackAnchor(
+                                    isPlaying = false,
+                                    positionMs = frozenPos,
+                                    capturedElapsedMs = SystemClock.elapsedRealtime(),
+                                    isAccurate = playback.isAccurate
+                                )
+                                estimatedPositionMs = frozenPos
+                                visualOffsetMs = 0L
+                            } else {
+                                // Already paused: ignore minor position updates (< 1.5s)
+                                val currentFrozen = prev?.positionMs ?: 0L
+                                val diff = Math.abs(currentFrozen - playback.positionMs)
+                                if (diff > 1500L) {
+                                    currentPlayback = playback
+                                    estimatedPositionMs = playback.positionMs
+                                    visualOffsetMs = 0L
+                                } else {
+                                    // Keep the current frozen anchor
+                                }
+                            }
+                        }
                     }
 
                     // Update persistent notification text
@@ -259,7 +324,20 @@ class FloatingLyricsService : Service() {
                 val pb = currentPlayback
                 if (pb != null && pb.isPlaying) {
                     val elapsed = SystemClock.elapsedRealtime() - pb.capturedElapsedMs
-                    estimatedPositionMs = pb.positionMs + elapsed
+                    val rawPosition = pb.positionMs + elapsed
+                    
+                    // Decaying visual offset over 1000ms
+                    val timeSinceResume = SystemClock.elapsedRealtime() - resumeTimeMs
+                    if (timeSinceResume < 1000L && visualOffsetMs != 0L) {
+                        val progress = timeSinceResume.toFloat() / 1000f
+                        // Quadratic easing out: 1 - (1 - progress)^2
+                        val easeOut = 1f - (1f - progress) * (1f - progress)
+                        val currentOffset = (visualOffsetMs * (1f - easeOut)).toLong()
+                        estimatedPositionMs = rawPosition + currentOffset
+                    } else {
+                        visualOffsetMs = 0L
+                        estimatedPositionMs = rawPosition
+                    }
                 } else if (pb != null) {
                     estimatedPositionMs = pb.positionMs
                 }
@@ -276,7 +354,27 @@ class FloatingLyricsService : Service() {
             putFloat("floating_text_size", textSizeSp)
             putFloat("floating_bg_opacity", backgroundOpacity)
             putString("floating_text_color", textColorHex)
+            putInt("floating_display_mode", displayMode)
             apply()
+        }
+    }
+
+    fun togglePlayback() {
+        val manager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+        val component = ComponentName(this, LyricsNotificationListenerService::class.java)
+        runCatching {
+            val controller = manager.getActiveSessions(component)
+                .firstOrNull { it.packageName == com.lyricsplus.android.spotify.SpotifyBroadcasts.PACKAGE_NAME }
+            if (controller != null) {
+                val state = controller.playbackState?.state
+                if (state == PlaybackState.STATE_PLAYING) {
+                    controller.transportControls.pause()
+                } else {
+                    controller.transportControls.play()
+                }
+            } else {
+                android.widget.Toast.makeText(this, "无法控制：请确保已启动 Spotify", android.widget.Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -329,5 +427,6 @@ class FloatingLyricsService : Service() {
         private const val CHANNEL_ID = "floating_lyrics_channel"
         private const val NOTIFICATION_ID = 1002
         const val ACTION_UNLOCK = "com.lyricsplus.android.action.UNLOCK"
+        const val ACTION_REFRESH_LYRICS = "com.lyricsplus.android.action.REFRESH_LYRICS"
     }
 }

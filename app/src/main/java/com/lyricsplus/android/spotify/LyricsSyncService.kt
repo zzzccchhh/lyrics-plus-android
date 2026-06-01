@@ -31,7 +31,7 @@ class LyricsSyncService : Service() {
     private val spotifyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             scope.launch {
-                delay(250)
+                delay(50)
                 syncMediaSession()
             }
         }
