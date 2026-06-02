@@ -58,6 +58,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.lyricsplus.android.LyricsUiState
 import com.lyricsplus.android.MainViewModel
 import kotlinx.coroutines.delay
+import androidx.compose.ui.composed
 import kotlin.math.max
 import androidx.compose.ui.platform.LocalConfiguration
 import android.content.res.Configuration
@@ -145,6 +146,10 @@ private fun LyricsOverlay(
 
     LaunchedEffect(webController.isReady, isRightAligned) {
         webController.pushRightAligned(isRightAligned)
+    }
+
+    LaunchedEffect(webController.isReady, state.inAppFontScale) {
+        webController.pushInAppFontScale(state.inAppFontScale)
     }
 
     // Push safe area insets (system bars + display cutout) to the WebView
@@ -531,7 +536,7 @@ private fun LyricsOverlay(
                                     val readingModeLabel = when (state.readingMode) {
                                         0 -> "注音模式: 无"
                                         1 -> "注音模式: 罗马音"
-                                        else -> "注音模式: 日文假名"
+                                        else -> "注音模式: 振假名"
                                     }
                                     MenuActionRow(label = "重新取色", emoji = "🎨") {
                                         viewModel.rotatePaletteColors()
@@ -551,14 +556,11 @@ private fun LyricsOverlay(
                                         viewModel.toggleKeepScreenOn()
                                     }
                                     MenuActionRow(
-                                        label = if (state.showFloatingLyrics) "桌面悬浮歌词: 开启" else "桌面悬浮歌词: 关闭",
+                                        label = if (state.showFloatingLyrics) "桌面歌词: 开启" else "桌面歌词: 关闭",
                                         emoji = "📱",
                                         active = state.showFloatingLyrics
                                     ) {
                                         viewModel.toggleFloatingLyrics()
-                                    }
-                                    MenuActionRow(label = "项目地址(欢迎Star)", emoji = "⭐") {
-                                        uriHandler.openUri("https://github.com/Artriai/lyrics-plus-android")
                                     }
                                 }
                             }
@@ -574,11 +576,45 @@ private fun LyricsOverlay(
                             MenuActionRow(label = "切换歌词源 [当前: ${state.activeLyricsSource}]", emoji = "🎵") {
                                 viewModel.switchLyricsSource()
                             }
-                            MenuActionRow(label = "歌词提前 (-0.5s) [当前: $offsetText]", emoji = "🐰") {
-                                viewModel.adjustOffset(-500)
-                            }
-                            MenuActionRow(label = "歌词延时 (+0.5s) [当前: $offsetText]", emoji = "🐢") {
-                                viewModel.adjustOffset(500)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xD9101211), RoundedCornerShape(6.dp))
+                                        .noRippleClickable { viewModel.adjustOffset(-500) }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text("歌词提前", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xD9101211), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(offsetText, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xD9101211), RoundedCornerShape(6.dp))
+                                        .noRippleClickable { viewModel.adjustOffset(500) }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text("歌词延时", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .background(Color(0xD9323634), CircleShape)
+                                        .noRippleClickable { viewModel.adjustOffset(-state.lyricsOffsetMs) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("⏰", fontSize = 18.sp)
+                                }
                             }
                             MenuActionRow(label = "重新取色", emoji = "🎨") {
                                 viewModel.rotatePaletteColors()
@@ -586,7 +622,7 @@ private fun LyricsOverlay(
                              val readingModeLabel = when (state.readingMode) {
                                  0 -> "注音模式: 无"
                                  1 -> "注音模式: 罗马音"
-                                 else -> "注音模式: 日文假名"
+                                 else -> "注音模式: 振假名"
                              }
                              MenuActionRow(
                                  label = readingModeLabel,
@@ -603,7 +639,7 @@ private fun LyricsOverlay(
                                 viewModel.toggleKeepScreenOn()
                             }
                             MenuActionRow(
-                                label = if (state.showFloatingLyrics) "桌面悬浮歌词: 开启" else "桌面悬浮歌词: 关闭",
+                                label = if (state.showFloatingLyrics) "桌面歌词: 开启" else "桌面歌词: 关闭",
                                 emoji = "📱",
                                 active = state.showFloatingLyrics
                             ) {
@@ -634,6 +670,75 @@ private fun LyricsOverlay(
                         text = if (isExpanded) "✕" else "⚙",
                         color = if (isExpanded) Color.Black else Color(0x66FFFFFF),
                         fontSize = if (isExpanded) 16.sp else 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // BOTTOM LEFT FONT SCALE BUTTONS (visible when settings panel is open)
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .navigationBarsPadding()
+                .padding(start = 24.dp, bottom = 24.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Plus button
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(Color(0xFF2E3230), CircleShape)
+                        .border(1.dp, Color(0xFF454A47), CircleShape)
+                        .noRippleClickable {
+                            viewModel.adjustInAppFontScale(0.1f)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "+",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Value indicator
+                Box(
+                    modifier = Modifier
+                        .background(Color(0xFF161A18), RoundedCornerShape(8.dp))
+                        .border(1.dp, Color(0xFF2D3230), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "${(state.inAppFontScale * 100).toInt()}%",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Minus button
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(Color(0xFF2E3230), CircleShape)
+                        .border(1.dp, Color(0xFF454A47), CircleShape)
+                        .noRippleClickable {
+                            viewModel.adjustInAppFontScale(-0.1f)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "—",
+                        color = Color.White,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }

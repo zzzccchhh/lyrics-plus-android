@@ -7,6 +7,7 @@
   --bg-a: #c72d75;
   --bg-b: #2b1126;
   --bg-c: #f06aa5;
+  --in-app-font-scale: 1.0;
 }
 
 * {
@@ -114,7 +115,7 @@ body {
   display: block;
   margin-bottom: 3px;
   color: rgba(255, 255, 255, 0.82);
-  font-size: 17px;
+  font-size: calc(17px * var(--in-app-font-scale, 1));
   line-height: 1.1;
   font-weight: 850;
   letter-spacing: 0;
@@ -132,7 +133,7 @@ body {
 .text {
   display: block;
   color: var(--inactive);
-  font-size: 48px;
+  font-size: calc(48px * var(--in-app-font-scale, 1));
   line-height: 1.2;
   font-weight: 900;
   letter-spacing: -0.02em;
@@ -146,7 +147,7 @@ body {
   display: block;
   margin-top: 8px;
   color: rgba(255, 255, 255, 0.12);
-  font-size: 30px;
+  font-size: calc(30px * var(--in-app-font-scale, 1));
   line-height: 1.2;
   font-weight: 800;
   letter-spacing: -0.01em;
@@ -165,15 +166,15 @@ body {
 }
 
 .line.long .text {
-  font-size: 38px;
+  font-size: calc(38px * var(--in-app-font-scale, 1));
 }
 
 .line.long .translation {
-  font-size: 24px;
+  font-size: calc(24px * var(--in-app-font-scale, 1));
 }
 
 .line.short .text {
-  font-size: 56px;
+  font-size: calc(56px * var(--in-app-font-scale, 1));
 }
 
 .line.far .text,
@@ -191,15 +192,15 @@ body {
 
 @media (min-width: 700px) {
   .text {
-    font-size: 70px;
+    font-size: calc(70px * var(--in-app-font-scale, 1));
   }
 
   .translation {
-    font-size: 45px;
+    font-size: calc(45px * var(--in-app-font-scale, 1));
   }
 
   .romaji {
-    font-size: 26px;
+    font-size: calc(26px * var(--in-app-font-scale, 1));
   }
 }
 
@@ -310,31 +311,31 @@ body {
 /* Lock font sizes — active line must NOT change size to prevent reflow */
 .stage.full-lyrics-mode .line .text,
 .stage.full-lyrics-mode .line.active .text {
-  font-size: 42px !important;
+  font-size: calc(42px * var(--in-app-font-scale, 1)) !important;
   color: rgba(255, 255, 255, 0.35);
   transition: color 350ms ease, text-shadow 350ms ease;
 }
 
 .stage.full-lyrics-mode .line .translation,
 .stage.full-lyrics-mode .line.active .translation {
-  font-size: 26px !important;
+  font-size: calc(26px * var(--in-app-font-scale, 1)) !important;
   color: rgba(255, 255, 255, 0.2);
   transition: color 350ms ease;
 }
 
 .stage.full-lyrics-mode .line.long .text,
 .stage.full-lyrics-mode .line.active.long .text {
-  font-size: 34px !important;
+  font-size: calc(34px * var(--in-app-font-scale, 1)) !important;
 }
 
 .stage.full-lyrics-mode .line.short .text,
 .stage.full-lyrics-mode .line.active.short .text {
-  font-size: 48px !important;
+  font-size: calc(48px * var(--in-app-font-scale, 1)) !important;
 }
 
 .stage.full-lyrics-mode .line.long .translation,
 .stage.full-lyrics-mode .line.active.long .translation {
-  font-size: 22px !important;
+  font-size: calc(22px * var(--in-app-font-scale, 1)) !important;
 }
 
 

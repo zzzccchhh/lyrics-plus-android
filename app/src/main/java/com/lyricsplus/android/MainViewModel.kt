@@ -36,7 +36,8 @@ data class LyricsUiState(
     val keepScreenOn: Boolean = false,
     val activeLyricsSource: String = "未加载",
     val isInitializing: Boolean = true,
-    val showFloatingLyrics: Boolean = false
+    val showFloatingLyrics: Boolean = false,
+    val inAppFontScale: Float = 1.0f
 )
 
 class MainViewModel(
@@ -48,7 +49,8 @@ class MainViewModel(
     private val _uiState = MutableStateFlow(LyricsUiState(
         readingMode = prefs.getInt("reading_mode", 1),
         keepScreenOn = prefs.getBoolean("keep_screen_on", false),
-        showFloatingLyrics = prefs.getBoolean("show_floating_lyrics", false)
+        showFloatingLyrics = prefs.getBoolean("show_floating_lyrics", false),
+        inAppFontScale = prefs.getFloat("in_app_font_scale", 1.0f)
     ))
     val uiState: StateFlow<LyricsUiState> = _uiState.asStateFlow()
 
@@ -433,6 +435,14 @@ class MainViewModel(
 
     fun adjustOffset(deltaMs: Long) {
         _uiState.update { it.copy(lyricsOffsetMs = it.lyricsOffsetMs + deltaMs) }
+    }
+
+    fun adjustInAppFontScale(delta: Float) {
+        _uiState.update { state ->
+            val nextScale = (state.inAppFontScale + delta).coerceIn(0.5f, 2.5f)
+            prefs.edit().putFloat("in_app_font_scale", nextScale).apply()
+            state.copy(inAppFontScale = nextScale)
+        }
     }
 
     fun cycleReadingMode() {

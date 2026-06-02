@@ -34,6 +34,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,6 +71,9 @@ fun FloatingLyricsView(
 
     var showControls by remember { mutableStateOf(true) }
     var interactionTrigger by remember { mutableStateOf(0) }
+    val coroutineScope = rememberCoroutineScope()
+    var tapCount by remember { mutableStateOf(0) }
+    var tapJob by remember { mutableStateOf<Job?>(null) }
 
     // Auto-hide controls after 2 seconds of inactivity
     androidx.compose.runtime.LaunchedEffect(interactionTrigger) {
@@ -92,7 +99,7 @@ fun FloatingLyricsView(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(Color(0xE6101211).copy(alpha = backgroundOpacity))
-                .border(1.dp, if (backgroundOpacity > 0f) Color(0x0DFFFFFF) else Color.Transparent, RoundedCornerShape(14.dp))
+                .border(1.dp, if (backgroundOpacity > 0.01f) Color(0x0DFFFFFF) else Color.Transparent, RoundedCornerShape(14.dp))
                 .then(
                     if (!isLocked) {
                         Modifier
@@ -106,11 +113,21 @@ fun FloatingLyricsView(
                             .pointerInput(isLocked) {
                                 detectTapGestures(
                                     onTap = {
-                                        interactionTrigger++ // Show controls on tap
-                                    },
-                                    onDoubleTap = {
-                                        service.togglePlayback()
-                                        interactionTrigger++ // Reset timer
+                                        tapCount++
+                                        tapJob?.cancel()
+                                        tapJob = coroutineScope.launch {
+                                            delay(280)
+                                            if (tapCount == 1) {
+                                                interactionTrigger++ // Show controls on tap
+                                            } else if (tapCount == 2) {
+                                                service.togglePlayback()
+                                                interactionTrigger++ // Reset timer
+                                            } else if (tapCount >= 3) {
+                                                service.nextTrack()
+                                                interactionTrigger++ // Reset timer
+                                            }
+                                            tapCount = 0
+                                        }
                                     }
                                 )
                             }
@@ -118,11 +135,21 @@ fun FloatingLyricsView(
                         Modifier.pointerInput(isLocked) {
                             detectTapGestures(
                                 onTap = {
-                                    interactionTrigger++ // Show controls on tap
-                                },
-                                onDoubleTap = {
-                                    service.togglePlayback()
-                                    interactionTrigger++ // Reset timer
+                                    tapCount++
+                                    tapJob?.cancel()
+                                    tapJob = coroutineScope.launch {
+                                        delay(280)
+                                        if (tapCount == 1) {
+                                            interactionTrigger++ // Show controls on tap
+                                        } else if (tapCount == 2) {
+                                            service.togglePlayback()
+                                            interactionTrigger++ // Reset timer
+                                        } else if (tapCount >= 3) {
+                                            service.nextTrack()
+                                            interactionTrigger++ // Reset timer
+                                        }
+                                        tapCount = 0
+                                    }
                                 }
                             )
                         }

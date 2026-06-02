@@ -378,6 +378,20 @@ class FloatingLyricsService : Service() {
         }
     }
 
+    fun nextTrack() {
+        val manager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+        val component = ComponentName(this, LyricsNotificationListenerService::class.java)
+        runCatching {
+            val controller = manager.getActiveSessions(component)
+                .firstOrNull { it.packageName == com.lyricsplus.android.spotify.SpotifyBroadcasts.PACKAGE_NAME }
+            if (controller != null) {
+                controller.transportControls.skipToNext()
+            } else {
+                android.widget.Toast.makeText(this, "无法控制：请确保已启动 Spotify", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(

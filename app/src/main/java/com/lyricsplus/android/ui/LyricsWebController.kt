@@ -111,6 +111,12 @@ class LyricsWebController(context: Context) {
         webView.evaluateJavascript("window.LyricsPlus.setRightAligned($rightAligned)", null)
     }
 
+    fun pushInAppFontScale(scale: Float) {
+        if (!isReady) return
+        Log.d(WebLogTag, "pushInAppFontScale scale=$scale")
+        webView.evaluateJavascript("window.LyricsPlus.setInAppFontScale($scale)", null)
+    }
+
     private fun pushStatusBarHeight() {
         val resourceId = webView.context.resources.getIdentifier("status_bar_height", "dimen", "android")
         val heightPx = if (resourceId > 0) webView.context.resources.getDimensionPixelSize(resourceId) else 0

@@ -937,15 +937,23 @@
     stageEl.style.setProperty("--focused-romaji-size", romajiPx);
   }
 
-
-
+  function setInAppFontScale(scale) {
+    try {
+      var s = Number(scale) || 1.0;
+      stageEl.style.setProperty('--in-app-font-scale', s);
+      renderFull();
+    } catch (error) {
+      report("error:setInAppFontScale:" + error.message);
+    }
+  }
 
   window.LyricsPlus = {
     setTrack: setTrack,
     setLyrics: setLyrics,
     setPlaybackState: setPlaybackState,
     setReadingMode: setReadingMode,
-    setRightAligned: setRightAligned
+    setRightAligned: setRightAligned,
+    setInAppFontScale: setInAppFontScale
   };
 
   window.onerror = function (message, source, line) {
@@ -1001,7 +1009,8 @@
     setLyrics: setLyrics,
     setPlaybackState: setPlaybackState,
     setReadingMode: setReadingMode,
-    setRightAligned: setRightAligned
+    setRightAligned: setRightAligned,
+    setInAppFontScale: setInAppFontScale
   };
 
   window.onerror = function (message, source, line) {
