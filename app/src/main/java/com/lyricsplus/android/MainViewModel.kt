@@ -434,7 +434,17 @@ class MainViewModel(
     }
 
     fun adjustOffset(deltaMs: Long) {
-        _uiState.update { it.copy(lyricsOffsetMs = it.lyricsOffsetMs + deltaMs) }
+        _uiState.update { state ->
+            val nextOffset = state.lyricsOffsetMs + deltaMs
+            if (state.showFloatingLyrics) {
+                val intent = Intent(getApplication(), com.lyricsplus.android.lyrics.FloatingLyricsService::class.java).apply {
+                    action = com.lyricsplus.android.lyrics.FloatingLyricsService.ACTION_UPDATE_OFFSET
+                    putExtra(com.lyricsplus.android.lyrics.FloatingLyricsService.EXTRA_OFFSET, nextOffset)
+                }
+                getApplication<Application>().startService(intent)
+            }
+            state.copy(lyricsOffsetMs = nextOffset)
+        }
     }
 
     fun adjustInAppFontScale(delta: Float) {
@@ -490,7 +500,9 @@ class MainViewModel(
     }
 
     private fun startFloatingService(context: Context) {
-        val intent = Intent(context, com.lyricsplus.android.lyrics.FloatingLyricsService::class.java)
+        val intent = Intent(context, com.lyricsplus.android.lyrics.FloatingLyricsService::class.java).apply {
+            putExtra(com.lyricsplus.android.lyrics.FloatingLyricsService.EXTRA_OFFSET, _uiState.value.lyricsOffsetMs)
+        }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
         } else {
@@ -571,6 +583,13 @@ class MainViewModel(
             val snapshot = reader.readSnapshot()
             if (snapshot != null) {
                 _uiState.update { it.copy(lyricsOffsetMs = 0L) }
+                if (_uiState.value.showFloatingLyrics) {
+                    val intent = Intent(getApplication(), com.lyricsplus.android.lyrics.FloatingLyricsService::class.java).apply {
+                        action = com.lyricsplus.android.lyrics.FloatingLyricsService.ACTION_UPDATE_OFFSET
+                        putExtra(com.lyricsplus.android.lyrics.FloatingLyricsService.EXTRA_OFFSET, 0L)
+                    }
+                    getApplication<Application>().startService(intent)
+                }
                 onMediaSnapshot(snapshot)
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     android.widget.Toast.makeText(getApplication(), "歌词时间已同步重置", android.widget.Toast.LENGTH_SHORT).show()

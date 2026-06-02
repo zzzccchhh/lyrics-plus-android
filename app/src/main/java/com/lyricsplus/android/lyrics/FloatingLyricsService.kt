@@ -121,12 +121,18 @@ class FloatingLyricsService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Unlock action sent from notification click
-        if (intent?.action == ACTION_UNLOCK) {
+        val action = intent?.action
+        if (action == ACTION_UNLOCK) {
             isLocked = false
             updateNotification("悬浮歌词已解锁，点击可移动")
-        } else if (intent?.action == ACTION_REFRESH_LYRICS) {
+        } else if (action == ACTION_REFRESH_LYRICS) {
             currentTrack?.let { fetchLyricsInBackground(it) }
+        } else if (action == ACTION_UPDATE_OFFSET) {
+            lyricsOffsetMs = intent.getLongExtra(EXTRA_OFFSET, 0L)
+        } else {
+            if (intent != null && intent.hasExtra(EXTRA_OFFSET)) {
+                lyricsOffsetMs = intent.getLongExtra(EXTRA_OFFSET, 0L)
+            }
         }
         return START_STICKY
     }
@@ -237,6 +243,7 @@ class FloatingLyricsService : Service() {
                             estimatedPositionMs = 0L
                             visualOffsetMs = 0L
                             resumeTimeMs = 0L
+                            lyricsOffsetMs = 0L
                             currentTrack = track
                             fetchLyricsInBackground(track)
                         } else {
@@ -442,5 +449,7 @@ class FloatingLyricsService : Service() {
         private const val NOTIFICATION_ID = 1002
         const val ACTION_UNLOCK = "com.lyricsplus.android.action.UNLOCK"
         const val ACTION_REFRESH_LYRICS = "com.lyricsplus.android.action.REFRESH_LYRICS"
+        const val ACTION_UPDATE_OFFSET = "com.lyricsplus.android.action.UPDATE_OFFSET"
+        const val EXTRA_OFFSET = "com.lyricsplus.android.extra.OFFSET"
     }
 }
