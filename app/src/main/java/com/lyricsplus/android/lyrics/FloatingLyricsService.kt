@@ -97,6 +97,7 @@ class FloatingLyricsService : Service() {
     private var resumeTimeMs = 0L
 
     private var tickJob: kotlinx.coroutines.Job? = null
+    private var positionSaveJob: kotlinx.coroutines.Job? = null
     private var trackRequestKey: String? = null
 
     override fun onCreate() {
@@ -139,6 +140,7 @@ class FloatingLyricsService : Service() {
 
     override fun onDestroy() {
         tickJob?.cancel()
+        windowParams?.let { saveWindowPositionNow(it.x, it.y) }
         serviceScope.cancel()
         removeOverlayWindow()
         
@@ -182,11 +184,14 @@ class FloatingLyricsService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = (resources.displayMetrics.heightPixels * 0.25f).toInt()
+            val prefs = getSharedPreferences("lyrics_plus_prefs", Context.MODE_PRIVATE)
+            val defaultY = (resources.displayMetrics.heightPixels * 0.25f).toInt()
+            x = prefs.getInt(PREF_FLOATING_WINDOW_X, 0)
+            y = prefs.getInt(PREF_FLOATING_WINDOW_Y, defaultY)
             preferredRefreshRate = 120f
         }
 
+        clampWindowPosition(params)
         windowManager.addView(view, params)
         this.composeView = view
         this.lifecycleOwner = lifecycleOwner
@@ -198,13 +203,32 @@ class FloatingLyricsService : Service() {
         val params = windowParams ?: return
         params.x += dx.toInt()
         params.y += dy.toInt()
-        
-        // Boundaries restriction
-        val metrics = resources.displayMetrics
-        params.x = params.x.coerceIn(0, metrics.widthPixels)
-        params.y = params.y.coerceIn(0, metrics.heightPixels - 150)
+        clampWindowPosition(params)
 
         windowManager.updateViewLayout(view, params)
+        scheduleWindowPositionSave(params.x, params.y)
+    }
+
+    private fun clampWindowPosition(params: WindowManager.LayoutParams) {
+        val metrics = resources.displayMetrics
+        params.x = params.x.coerceIn(0, metrics.widthPixels)
+        params.y = params.y.coerceIn(0, (metrics.heightPixels - 150).coerceAtLeast(0))
+    }
+
+    private fun scheduleWindowPositionSave(x: Int, y: Int) {
+        positionSaveJob?.cancel()
+        positionSaveJob = serviceScope.launch {
+            delay(250)
+            saveWindowPositionNow(x, y)
+        }
+    }
+
+    private fun saveWindowPositionNow(x: Int, y: Int) {
+        getSharedPreferences("lyrics_plus_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putInt(PREF_FLOATING_WINDOW_X, x)
+            .putInt(PREF_FLOATING_WINDOW_Y, y)
+            .apply()
     }
 
     fun updateWindowTouchability(touchable: Boolean) {
@@ -451,5 +475,7 @@ class FloatingLyricsService : Service() {
         const val ACTION_REFRESH_LYRICS = "com.lyricsplus.android.action.REFRESH_LYRICS"
         const val ACTION_UPDATE_OFFSET = "com.lyricsplus.android.action.UPDATE_OFFSET"
         const val EXTRA_OFFSET = "com.lyricsplus.android.extra.OFFSET"
+        private const val PREF_FLOATING_WINDOW_X = "floating_window_x"
+        private const val PREF_FLOATING_WINDOW_Y = "floating_window_y"
     }
 }

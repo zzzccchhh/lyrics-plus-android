@@ -87,6 +87,30 @@ fun FloatingLyricsView(
     val isLocked = service.isLocked
     val textColor = runCatching { Color(android.graphics.Color.parseColor(service.textColorHex)) }.getOrDefault(Color.White)
 
+    fun handleBarTap() {
+        if (isExpanded) {
+            isExpanded = false
+            interactionTrigger++
+            return
+        }
+
+        tapCount++
+        tapJob?.cancel()
+        tapJob = coroutineScope.launch {
+            delay(280)
+            if (tapCount == 1) {
+                interactionTrigger++ // Show controls on tap
+            } else if (tapCount == 2) {
+                service.togglePlayback()
+                interactionTrigger++ // Reset timer
+            } else if (tapCount >= 3) {
+                service.nextTrack()
+                interactionTrigger++ // Reset timer
+            }
+            tapCount = 0
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -112,45 +136,13 @@ fun FloatingLyricsView(
                             }
                             .pointerInput(isLocked) {
                                 detectTapGestures(
-                                    onTap = {
-                                        tapCount++
-                                        tapJob?.cancel()
-                                        tapJob = coroutineScope.launch {
-                                            delay(280)
-                                            if (tapCount == 1) {
-                                                interactionTrigger++ // Show controls on tap
-                                            } else if (tapCount == 2) {
-                                                service.togglePlayback()
-                                                interactionTrigger++ // Reset timer
-                                            } else if (tapCount >= 3) {
-                                                service.nextTrack()
-                                                interactionTrigger++ // Reset timer
-                                            }
-                                            tapCount = 0
-                                        }
-                                    }
+                                    onTap = { handleBarTap() }
                                 )
                             }
                     } else {
                         Modifier.pointerInput(isLocked) {
                             detectTapGestures(
-                                onTap = {
-                                    tapCount++
-                                    tapJob?.cancel()
-                                    tapJob = coroutineScope.launch {
-                                        delay(280)
-                                        if (tapCount == 1) {
-                                            interactionTrigger++ // Show controls on tap
-                                        } else if (tapCount == 2) {
-                                            service.togglePlayback()
-                                            interactionTrigger++ // Reset timer
-                                        } else if (tapCount >= 3) {
-                                            service.nextTrack()
-                                            interactionTrigger++ // Reset timer
-                                        }
-                                        tapCount = 0
-                                    }
-                                }
+                                onTap = { handleBarTap() }
                             )
                         }
                     }

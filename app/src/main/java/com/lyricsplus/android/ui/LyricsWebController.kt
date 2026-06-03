@@ -16,6 +16,7 @@ import android.webkit.WebViewClient
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.lyricsplus.android.BuildConfig
 import com.lyricsplus.android.data.LyricsLine
 import com.lyricsplus.android.data.NowPlaying
 import org.json.JSONArray
@@ -35,8 +36,8 @@ class LyricsWebController(context: Context) {
         private set
 
     val webView: WebView = WebView(context).apply {
-        WebView.setWebContentsDebuggingEnabled(true)
-        Log.d(WebLogTag, "create native WebView")
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+        logDebug("create native WebView")
         setBackgroundColor(android.graphics.Color.BLACK)
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = false
@@ -46,21 +47,24 @@ class LyricsWebController(context: Context) {
         overScrollMode = WebView.OVER_SCROLL_NEVER
         isVerticalScrollBarEnabled = false
         isHorizontalScrollBarEnabled = false
-        webChromeClient = object : WebChromeClient() {
-            override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-                Log.d(
-                    WebLogTag,
-                    "console ${consoleMessage.messageLevel()} ${consoleMessage.sourceId()}:${consoleMessage.lineNumber()} ${consoleMessage.message()}"
-                )
-                setDebug("console: ${consoleMessage.message()}")
-                return true
+        if (BuildConfig.DEBUG) {
+            webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                    Log.d(
+                        WebLogTag,
+                        "console ${consoleMessage.messageLevel()} ${consoleMessage.sourceId()}:${consoleMessage.lineNumber()} ${consoleMessage.message()}"
+                    )
+                    setDebug("console: ${consoleMessage.message()}")
+                    return true
+                }
             }
         }
         webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
-                Log.d(WebLogTag, "pageFinished url=$url")
+                logDebug("pageFinished url=$url")
                 isReady = true
                 setDebug("WebView page finished")
+                webView.evaluateJavascript("window.LYRICS_PLUS_DEBUG=${BuildConfig.DEBUG}", null)
                 pushStatusBarHeight()
             }
 
@@ -78,21 +82,21 @@ class LyricsWebController(context: Context) {
             }
         }
 
-        Log.d(WebLogTag, "load assets html")
+        logDebug("load assets html")
         loadUrl("file:///android_asset/lyrics-web/index.html")
     }
 
     fun pushTrack(track: NowPlaying) {
         if (!isReady) return
         val trackJson = track.toJson().toString()
-        Log.d(WebLogTag, "push track=${track.track} artist=${track.artist}")
+        logDebug("push track=${track.track} artist=${track.artist}")
         webView.evaluateJavascript("window.LyricsPlus.setTrack($trackJson)", ::logJsResult)
     }
 
     fun pushLyrics(lyrics: List<LyricsLine>) {
         if (!isReady) return
         val lyricsJson = lyrics.toJson().toString()
-        Log.d(WebLogTag, "push lyrics count=${lyrics.size}")
+        logDebug("push lyrics count=${lyrics.size}")
         webView.evaluateJavascript("window.LyricsPlus.setLyrics($lyricsJson)", ::logJsResult)
     }
 
@@ -122,7 +126,7 @@ class LyricsWebController(context: Context) {
         val heightPx = if (resourceId > 0) webView.context.resources.getDimensionPixelSize(resourceId) else 0
         val density = webView.context.resources.displayMetrics.density
         val heightDp = if (density > 0) (heightPx / density).toInt() else 28
-        Log.d(WebLogTag, "statusBarHeight=${heightDp}dp")
+        logDebug("statusBarHeight=${heightDp}dp")
         webView.evaluateJavascript(
             "document.getElementById('stage').style.setProperty('--status-bar-height', '${heightDp}px')",
             null
@@ -133,7 +137,7 @@ class LyricsWebController(context: Context) {
         if (!isReady) return
         val density = webView.context.resources.displayMetrics.density
         val heightDp = if (density > 0) (heightPx / density).toInt() else 0
-        Log.d(WebLogTag, "headerBottom=${heightDp}dp")
+        logDebug("headerBottom=${heightDp}dp")
         webView.evaluateJavascript(
             "document.getElementById('stage').style.setProperty('--header-bottom', '${heightDp}px')",
             null
@@ -142,7 +146,7 @@ class LyricsWebController(context: Context) {
 
     fun pushSafeInsets(topDp: Int, rightDp: Int, bottomDp: Int, leftDp: Int) {
         if (!isReady) return
-        Log.d(WebLogTag, "safeInsets top=$topDp right=$rightDp bottom=$bottomDp left=$leftDp")
+        logDebug("safeInsets top=$topDp right=$rightDp bottom=$bottomDp left=$leftDp")
         webView.evaluateJavascript(
             "(function(){var s=document.getElementById('stage').style;" +
             "s.setProperty('--safe-top','${topDp}px');" +
@@ -175,7 +179,13 @@ private class LyricsWebBridge(
 
     @JavascriptInterface
     fun report(message: String) {
-        Log.d(WebLogTag, "bridge $message")
+        val isError = message.startsWith("error:", ignoreCase = true)
+        if (!BuildConfig.DEBUG && !isError) return
+        if (isError) {
+            Log.e(WebLogTag, "bridge $message")
+        } else {
+            logDebug("bridge $message")
+        }
         mainHandler.post {
             onDebug(message)
         }
@@ -183,7 +193,7 @@ private class LyricsWebBridge(
 
     @JavascriptInterface
     fun setFullLyricsMode(full: Boolean) {
-        Log.d(WebLogTag, "bridge fullLyricsMode=$full")
+        logDebug("bridge fullLyricsMode=$full")
         mainHandler.post {
             onFullLyricsMode(full)
         }
@@ -214,7 +224,13 @@ private fun List<LyricsLine>.toJson(): JSONArray =
     }
 
 private fun logJsResult(value: String?) {
-    if (value != null && value != "null") {
+    if (BuildConfig.DEBUG && value != null && value != "null") {
         Log.d(WebLogTag, "evaluate result=$value")
+    }
+}
+
+private fun logDebug(message: String) {
+    if (BuildConfig.DEBUG) {
+        Log.d(WebLogTag, message)
     }
 }

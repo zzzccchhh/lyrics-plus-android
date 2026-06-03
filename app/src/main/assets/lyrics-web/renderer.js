@@ -53,11 +53,15 @@
 
   function report(message) {
     try {
-      if (window.console && window.console.log) {
+      var text = String(message);
+      var isError = text.indexOf("error:") === 0;
+      var shouldReport = !!window.LYRICS_PLUS_DEBUG || isError;
+      if (!shouldReport) return;
+      if (window.LYRICS_PLUS_DEBUG && window.console && window.console.log) {
         window.console.log("LyricsPlus " + message);
       }
       if (window.AndroidLyrics && window.AndroidLyrics.report) {
-        window.AndroidLyrics.report(String(message));
+        window.AndroidLyrics.report(text);
       }
     } catch (ignore) {
     }
