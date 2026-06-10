@@ -534,11 +534,14 @@ private fun LyricsOverlay(
                                     MenuActionRow(label = "切换歌词源 [当前: ${state.activeLyricsSource}]", emoji = "🎵") {
                                         viewModel.switchLyricsSource()
                                     }
-                                    MenuActionRow(label = "歌词提前 (-0.5s) [当前: $offsetText]", emoji = "🐰") {
-                                        viewModel.adjustOffset(-500)
-                                    }
-                                    MenuActionRow(label = "歌词延时 (+0.5s) [当前: $offsetText]", emoji = "🐢") {
-                                        viewModel.adjustOffset(500)
+                                    LyricsOffsetAdjustRow(
+                                        offsetText = offsetText,
+                                        onAdvance = { viewModel.adjustOffset(-500) },
+                                        onDelay = { viewModel.adjustOffset(500) },
+                                        onReset = { viewModel.adjustOffset(-state.lyricsOffsetMs) }
+                                    )
+                                    MenuActionRow(label = "重新取色", emoji = "🎨") {
+                                        viewModel.rotatePaletteColors()
                                     }
                                 }
 
@@ -550,9 +553,6 @@ private fun LyricsOverlay(
                                         0 -> "注音模式: 无"
                                         1 -> "注音模式: 罗马音"
                                         else -> "注音模式: 振假名"
-                                    }
-                                    MenuActionRow(label = "重新取色", emoji = "🎨") {
-                                        viewModel.rotatePaletteColors()
                                     }
                                     MenuActionRow(
                                         label = readingModeLabel,
@@ -582,10 +582,6 @@ private fun LyricsOverlay(
                                     ) {
                                         viewModel.toggleSuperIslandLyrics()
                                     }
-                                    MenuActionRow(label = "关于项目", emoji = "ℹ") {
-                                        isExpanded = false
-                                        showAboutPage = true
-                                    }
                                 }
                             }
                         }
@@ -600,46 +596,12 @@ private fun LyricsOverlay(
                             MenuActionRow(label = "切换歌词源 [当前: ${state.activeLyricsSource}]", emoji = "🎵") {
                                 viewModel.switchLyricsSource()
                             }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .background(Color(0xD9101211), RoundedCornerShape(6.dp))
-                                        .noRippleClickable { viewModel.adjustOffset(-500) }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Text("歌词提前", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .background(Color(0xD9101211), RoundedCornerShape(6.dp))
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Text(offsetText, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .background(Color(0xD9101211), RoundedCornerShape(6.dp))
-                                        .noRippleClickable { viewModel.adjustOffset(500) }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Text("歌词延时", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .background(Color(0xD9323634), CircleShape)
-                                        .noRippleClickable { viewModel.adjustOffset(-state.lyricsOffsetMs) },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("⏰", fontSize = 18.sp)
-                                }
-                            }
+                            LyricsOffsetAdjustRow(
+                                offsetText = offsetText,
+                                onAdvance = { viewModel.adjustOffset(-500) },
+                                onDelay = { viewModel.adjustOffset(500) },
+                                onReset = { viewModel.adjustOffset(-state.lyricsOffsetMs) }
+                            )
                             MenuActionRow(label = "重新取色", emoji = "🎨") {
                                 viewModel.rotatePaletteColors()
                             }
@@ -1056,6 +1018,55 @@ private fun AboutActionItem(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(start = 14.dp)
         )
+    }
+}
+
+@Composable
+private fun LyricsOffsetAdjustRow(
+    offsetText: String,
+    onAdvance: () -> Unit,
+    onDelay: () -> Unit,
+    onReset: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .background(Color(0xD9101211), RoundedCornerShape(6.dp))
+                .noRippleClickable { onAdvance() }
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Text("歌词提前", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Box(
+            modifier = Modifier
+                .background(Color(0xD9101211), RoundedCornerShape(6.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Text(offsetText, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Box(
+            modifier = Modifier
+                .background(Color(0xD9101211), RoundedCornerShape(6.dp))
+                .noRippleClickable { onDelay() }
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Text("歌词延后", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .background(Color(0xD9323634), CircleShape)
+                .noRippleClickable { onReset() },
+            contentAlignment = Alignment.Center
+        ) {
+            Text("⏰", fontSize = 18.sp)
+        }
     }
 }
 
