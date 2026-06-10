@@ -16,14 +16,36 @@ data class SpotifyMediaSnapshot(
     val source: String
 )
 
+object SpotifyMediaSessionSelector {
+    fun chooseController(controllers: List<MediaController>): MediaController? {
+        val candidates = controllers.filter {
+            it.packageName == SpotifyBroadcasts.PACKAGE_NAME && it.hasUsableMetadata()
+        }
+        return candidates.maxByOrNull { controller ->
+            when (controller.playbackState?.state) {
+                PlaybackState.STATE_PLAYING -> 3
+                PlaybackState.STATE_BUFFERING,
+                PlaybackState.STATE_CONNECTING -> 2
+                PlaybackState.STATE_PAUSED -> 1
+                else -> 0
+            }
+        }
+    }
+
+    private fun MediaController.hasUsableMetadata(): Boolean {
+        val metadata = metadata ?: return false
+        return metadata.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty().isNotBlank() ||
+            metadata.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty().isNotBlank()
+    }
+}
+
 class SpotifyMediaSessionReader(private val context: Context) {
     private val notificationListener = ComponentName(context, LyricsNotificationListenerService::class.java)
 
     fun readSnapshot(): SpotifyMediaSnapshot? {
         val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         val controller = runCatching {
-            manager.getActiveSessions(notificationListener)
-                .firstOrNull { it.packageName == SpotifyBroadcasts.PACKAGE_NAME }
+            SpotifyMediaSessionSelector.chooseController(manager.getActiveSessions(notificationListener))
         }.getOrNull()
 
         if (controller != null) {
@@ -54,6 +76,7 @@ class SpotifyMediaSessionReader(private val context: Context) {
             artist = artist,
             album = album,
             durationSeconds = ((durationMs + 500) / 1000).toInt(),
+            mediaPackage = packageName,
             backgroundStart = palette?.start,
             backgroundEnd = palette?.end,
             backgroundAccent = palette?.accent,

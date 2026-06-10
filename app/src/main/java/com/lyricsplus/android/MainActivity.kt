@@ -1,7 +1,9 @@
 package com.lyricsplus.android
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.ViewGroup
@@ -15,6 +17,7 @@ import com.lyricsplus.android.spotify.LyricsSyncService
 import com.lyricsplus.android.ui.LyricsPlusApp
 import com.lyricsplus.android.ui.LyricsWebController
 import androidx.activity.enableEdgeToEdge
+import androidx.core.app.ActivityCompat
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
@@ -22,6 +25,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestNotificationPermissionIfNeeded()
 
         // Request 120Hz high refresh rate natively for fluid animations on VRR screens
         val windowParams = window.attributes
@@ -77,5 +81,17 @@ class MainActivity : ComponentActivity() {
 
     private fun openNotificationAccess() {
         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                100
+            )
+        }
     }
 }

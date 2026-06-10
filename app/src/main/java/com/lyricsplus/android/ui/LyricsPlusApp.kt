@@ -1,6 +1,7 @@
 package com.lyricsplus.android.ui
 
 import android.os.SystemClock
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -8,6 +9,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -112,7 +116,11 @@ private fun LyricsOverlay(
         }
     }
     val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
     val isRightAligned = isMultiPane
+    val prefs = remember(context) {
+        context.getSharedPreferences("lyrics_plus_prefs", android.content.Context.MODE_PRIVATE)
+    }
 
     LaunchedEffect(webController.isReady, state.nowPlaying) {
         webController.pushTrack(state.nowPlaying)
@@ -187,6 +195,7 @@ private fun LyricsOverlay(
     var playbackButtonsShowTrigger by remember { mutableStateOf(0) }
     var headerHeightPx by remember { mutableStateOf(0) }
     var showOverlay by remember { mutableStateOf(false) }
+    var showAboutPage by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.lyrics.isEmpty(), state.nowPlaying.track) {
         if (state.lyrics.isEmpty()) {
@@ -217,6 +226,10 @@ private fun LyricsOverlay(
         if (!isExpanded) {
             isButtonVisible = false
         }
+    }
+
+    BackHandler(enabled = showAboutPage) {
+        showAboutPage = false
     }
 
     LaunchedEffect(playbackButtonsShowTrigger) {
@@ -562,6 +575,17 @@ private fun LyricsOverlay(
                                     ) {
                                         viewModel.toggleFloatingLyrics()
                                     }
+                                    MenuActionRow(
+                                        label = if (state.showSuperIslandLyrics) "小米超级岛歌词: 开启" else "小米超级岛歌词: 关闭",
+                                        emoji = "🏝",
+                                        active = state.showSuperIslandLyrics
+                                    ) {
+                                        viewModel.toggleSuperIslandLyrics()
+                                    }
+                                    MenuActionRow(label = "关于项目", emoji = "ℹ") {
+                                        isExpanded = false
+                                        showAboutPage = true
+                                    }
                                 }
                             }
                         }
@@ -645,11 +669,16 @@ private fun LyricsOverlay(
                             ) {
                                 viewModel.toggleFloatingLyrics()
                             }
-                            MenuActionRow(label = "检查更新", emoji = "🚀") {
-                                viewModel.checkForUpdates()
+                            MenuActionRow(
+                                label = if (state.showSuperIslandLyrics) "小米超级岛歌词: 开启" else "小米超级岛歌词: 关闭",
+                                emoji = "🏝",
+                                active = state.showSuperIslandLyrics
+                            ) {
+                                viewModel.toggleSuperIslandLyrics()
                             }
-                            MenuActionRow(label = "项目地址(欢迎Star)", emoji = "⭐") {
-                                uriHandler.openUri("https://github.com/Artriai/lyrics-plus-android")
+                            MenuActionRow(label = "关于项目", emoji = "ℹ") {
+                                isExpanded = false
+                                showAboutPage = true
                             }
                         }
                     }
@@ -678,7 +707,7 @@ private fun LyricsOverlay(
 
         // BOTTOM LEFT FONT SCALE BUTTONS (visible when settings panel is open)
         AnimatedVisibility(
-            visible = isExpanded,
+            visible = isExpanded && !showAboutPage,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
@@ -743,6 +772,20 @@ private fun LyricsOverlay(
                     )
                 }
             }
+        }
+
+        if (showAboutPage) {
+            AboutProjectPage(
+                onBack = { showAboutPage = false },
+                onCheckUpdates = { viewModel.checkForUpdates() },
+                onOpenProject = {
+                    uriHandler.openUri("https://github.com/Artriai/lyrics-plus-android")
+                },
+                onOpenFeedback = {
+                    uriHandler.openUri("https://www.coolapk.com/u/Artriai")
+                },
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }
@@ -879,6 +922,134 @@ private fun EmptyOverlay(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AboutProjectPage(
+    onBack: () -> Unit,
+    onCheckUpdates: () -> Unit,
+    onOpenProject: () -> Unit,
+    onOpenFeedback: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .background(AppBackground)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(Color(0xFF202421), CircleShape)
+                        .border(1.dp, Color(0xFF343A36), CircleShape)
+                        .noRippleClickable { onBack() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("‹", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Column {
+                    Text(
+                        text = "关于项目",
+                        color = Color.White,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        lineHeight = 34.sp
+                    )
+                    Text(
+                        text = "Lyrics Plus",
+                        color = Color(0x998D9490),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            AboutActionItem(title = "检测更新", subtitle = "检查 GitHub Release 是否有新版本", onClick = onCheckUpdates)
+            AboutActionItem(title = "项目地址(欢迎Star)", subtitle = "打开 GitHub 项目主页", onClick = onOpenProject)
+            AboutActionItem(title = "反馈问题", subtitle = "打开作者酷安主页", onClick = onOpenFeedback)
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Panel, RoundedCornerShape(8.dp))
+                    .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(8.dp))
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "赞助说明",
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "如果本项目帮助了你，可以给作者买一杯咖啡",
+                    color = Color(0xB3FFFFFF),
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutActionItem(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Panel, RoundedCornerShape(8.dp))
+            .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(8.dp))
+            .noRippleClickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = title,
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = subtitle,
+                color = Color(0x998D9490),
+                fontSize = 12.sp,
+                lineHeight = 16.sp
+            )
+        }
+        Text(
+            text = "›",
+            color = Color(0x99FFFFFF),
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 14.dp)
+        )
     }
 }
 

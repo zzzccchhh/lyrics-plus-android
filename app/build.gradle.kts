@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.lyricsplus.android"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.lyricsplus.android"
@@ -21,6 +21,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        aidl = true
     }
 
     compileOptions {
@@ -90,6 +91,9 @@ dependencies {
     implementation("com.atilika.kuromoji:kuromoji-ipadic:0.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.palette:palette:1.0.0")
+    implementation("com.xzakota.hyper.notification:focus-api:1.4")
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     debugImplementation(composeBom)
     debugImplementation("androidx.compose.ui:ui-tooling")
