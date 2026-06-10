@@ -5,3 +5,4 @@ app/build/
 .idea/
 .kotlin/
 *.iml
+worker/

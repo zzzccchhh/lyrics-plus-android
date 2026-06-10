@@ -31,11 +31,16 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.lyricsplus.android.AppLyricsStateStore
+import com.lyricsplus.android.LyricsUiState
 import com.lyricsplus.android.MainActivity
 import com.lyricsplus.android.data.LyricsLine
 import com.lyricsplus.android.data.NowPlaying
 import com.lyricsplus.android.data.PlaybackAnchor
 import com.lyricsplus.android.spotify.LyricsNotificationListenerService
+import com.lyricsplus.android.spotify.SpotifyMediaSessionSelector
+import com.lyricsplus.android.spotify.SpotifyMediaSessionReader
+import com.lyricsplus.android.spotify.SpotifyMediaSnapshot
 import com.lyricsplus.android.ui.FloatingLyricsView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -99,6 +104,10 @@ class FloatingLyricsService : Service() {
     private var tickJob: kotlinx.coroutines.Job? = null
     private var positionSaveJob: kotlinx.coroutines.Job? = null
     private var trackRequestKey: String? = null
+    private var mediaSyncInFlight = false
+    private var lastMediaSyncElapsed = 0L
+    private var hasAppState = false
+    private val mediaSessionReader by lazy { SpotifyMediaSessionReader(this) }
 
     override fun onCreate() {
         super.onCreate()
@@ -253,81 +262,101 @@ class FloatingLyricsService : Service() {
 
     private fun observePlaybackUpdates() {
         serviceScope.launch {
-            LyricsNotificationListenerService.snapshotFlow.collect { snapshot ->
-                if (snapshot != null) {
-                    val track = snapshot.nowPlaying
-                    val playback = snapshot.playback
-
-                    if (track != null && track.hasTrack) {
-                        val key = listOf(track.track, track.artist, track.album, track.durationSeconds).joinToString("|")
-                        if (trackRequestKey != key) {
-                            trackRequestKey = key
-                            // Instant reset to avoid flashing stale lyric lines of the previous song
-                            currentLyrics = emptyList()
-                            estimatedPositionMs = 0L
-                            visualOffsetMs = 0L
-                            resumeTimeMs = 0L
-                            lyricsOffsetMs = 0L
-                            currentTrack = track
-                            fetchLyricsInBackground(track)
-                        } else {
-                            currentTrack = track
-                        }
-                    }
-
-                    if (playback != null) {
-                        val prev = currentPlayback
-                        val wasPlaying = prev?.isPlaying == true
-                        val isNowPlaying = playback.isPlaying
-
-                        if (isNowPlaying) {
-                            if (!wasPlaying) {
-                                // Transition from paused to playing: smoothly transition/decay the visual offset
-                                val frozenPos = prev?.positionMs ?: playback.positionMs
-                                val diff = frozenPos - playback.positionMs
-                                visualOffsetMs = if (Math.abs(diff) < 1500L) diff else 0L
-                                resumeTimeMs = SystemClock.elapsedRealtime()
-                                currentPlayback = playback
-                            } else {
-                                // Already playing
-                                currentPlayback = playback
-                            }
-                        } else {
-                            if (wasPlaying) {
-                                // Transition from playing to paused: freeze visually at extrapolated position
-                                val elapsed = SystemClock.elapsedRealtime() - (prev?.capturedElapsedMs ?: SystemClock.elapsedRealtime())
-                                val extrapolated = (prev?.positionMs ?: 0L) + elapsed
-                                val diff = extrapolated - playback.positionMs
-                                val frozenPos = if (Math.abs(diff) < 1500L) extrapolated else playback.positionMs
-                                
-                                currentPlayback = PlaybackAnchor(
-                                    isPlaying = false,
-                                    positionMs = frozenPos,
-                                    capturedElapsedMs = SystemClock.elapsedRealtime(),
-                                    isAccurate = playback.isAccurate
-                                )
-                                estimatedPositionMs = frozenPos
-                                visualOffsetMs = 0L
-                            } else {
-                                // Already paused: ignore minor position updates (< 1.5s)
-                                val currentFrozen = prev?.positionMs ?: 0L
-                                val diff = Math.abs(currentFrozen - playback.positionMs)
-                                if (diff > 1500L) {
-                                    currentPlayback = playback
-                                    estimatedPositionMs = playback.positionMs
-                                    visualOffsetMs = 0L
-                                } else {
-                                    // Keep the current frozen anchor
-                                }
-                            }
-                        }
-                    }
-
-                    // Update persistent notification text
-                    track?.let {
-                        updateNotification("${it.track} - ${it.artist}")
-                    }
+            AppLyricsStateStore.state.collect { state ->
+                if (state != null) {
+                    hasAppState = true
+                    applyAppState(state)
                 }
+            }
+        }
+        serviceScope.launch {
+            LyricsNotificationListenerService.snapshotFlow.collect { snapshot ->
+                if (!hasAppState) {
+                    snapshot?.let(::applySnapshot)
+                }
+            }
+        }
+    }
+
+    private fun applyAppState(state: LyricsUiState) {
+        if (!state.nowPlaying.hasTrack) return
+        currentTrack = state.nowPlaying
+        currentLyrics = state.lyrics
+        currentPlayback = state.playback
+        estimatedPositionMs = state.playback.currentPositionMs()
+        visualOffsetMs = 0L
+        resumeTimeMs = if (state.playback.isPlaying) SystemClock.elapsedRealtime() else 0L
+        lyricsOffsetMs = state.lyricsOffsetMs
+        trackRequestKey = state.nowPlaying.stableFloatingRequestKey()
+        updateNotification("${state.nowPlaying.track} - ${state.nowPlaying.artist}")
+    }
+
+    private fun applySnapshot(snapshot: SpotifyMediaSnapshot) {
+        val track = snapshot.nowPlaying
+        val playback = snapshot.playback
+
+        if (track != null && track.hasTrack) {
+            val key = track.stableFloatingRequestKey()
+            if (trackRequestKey != key) {
+                trackRequestKey = key
+                currentLyrics = emptyList()
+                estimatedPositionMs = 0L
+                visualOffsetMs = 0L
+                resumeTimeMs = 0L
+                lyricsOffsetMs = 0L
+                currentTrack = track
+                fetchLyricsInBackground(track)
+            } else {
+                currentTrack = track
+            }
+        }
+
+        if (playback != null) {
+            applyPlayback(playback)
+        }
+
+        track?.let {
+            updateNotification("${it.track} - ${it.artist}")
+        }
+    }
+
+    private fun applyPlayback(playback: PlaybackAnchor) {
+        val prev = currentPlayback
+        val wasPlaying = prev?.isPlaying == true
+        val isNowPlaying = playback.isPlaying
+
+        if (isNowPlaying) {
+            if (!wasPlaying) {
+                val frozenPos = prev?.positionMs ?: playback.positionMs
+                val diff = frozenPos - playback.positionMs
+                visualOffsetMs = if (Math.abs(diff) < 1500L) diff else 0L
+                resumeTimeMs = SystemClock.elapsedRealtime()
+            }
+            currentPlayback = playback
+            return
+        }
+
+        if (wasPlaying) {
+            val elapsed = SystemClock.elapsedRealtime() - (prev?.capturedElapsedMs ?: SystemClock.elapsedRealtime())
+            val extrapolated = (prev?.positionMs ?: 0L) + elapsed
+            val diff = extrapolated - playback.positionMs
+            val frozenPos = if (Math.abs(diff) < 1500L) extrapolated else playback.positionMs
+
+            currentPlayback = PlaybackAnchor(
+                isPlaying = false,
+                positionMs = frozenPos,
+                capturedElapsedMs = SystemClock.elapsedRealtime(),
+                isAccurate = playback.isAccurate
+            )
+            estimatedPositionMs = frozenPos
+            visualOffsetMs = 0L
+        } else {
+            val currentFrozen = prev?.positionMs ?: 0L
+            val diff = Math.abs(currentFrozen - playback.positionMs)
+            if (diff > 1500L) {
+                currentPlayback = playback
+                estimatedPositionMs = playback.positionMs
+                visualOffsetMs = 0L
             }
         }
     }
@@ -352,6 +381,7 @@ class FloatingLyricsService : Service() {
         tickJob?.cancel()
         tickJob = serviceScope.launch {
             while (isActive) {
+                maybeSyncCurrentMediaSnapshot()
                 val pb = currentPlayback
                 if (pb != null && pb.isPlaying) {
                     val elapsed = SystemClock.elapsedRealtime() - pb.capturedElapsedMs
@@ -379,6 +409,25 @@ class FloatingLyricsService : Service() {
         }
     }
 
+    private suspend fun maybeSyncCurrentMediaSnapshot() {
+        val now = SystemClock.elapsedRealtime()
+        if (hasAppState) return
+        if (mediaSyncInFlight || now - lastMediaSyncElapsed < MEDIA_SESSION_SYNC_INTERVAL_MS) return
+        mediaSyncInFlight = true
+        lastMediaSyncElapsed = now
+        try {
+            val snapshot = withContext(Dispatchers.IO) {
+                mediaSessionReader.readSnapshot()
+            }
+            snapshot?.let(::applySnapshot)
+        } finally {
+            mediaSyncInFlight = false
+        }
+    }
+
+    private fun NowPlaying.stableFloatingRequestKey(): String =
+        listOf(mediaPackage, track, artist, album).joinToString("|")
+
     fun savePrefs() {
         val prefs = getSharedPreferences("lyrics_plus_prefs", Context.MODE_PRIVATE)
         prefs.edit().apply {
@@ -395,7 +444,7 @@ class FloatingLyricsService : Service() {
         val component = ComponentName(this, LyricsNotificationListenerService::class.java)
         runCatching {
             val controller = manager.getActiveSessions(component)
-                .firstOrNull { it.packageName == com.lyricsplus.android.spotify.SpotifyBroadcasts.PACKAGE_NAME }
+                .let { SpotifyMediaSessionSelector.chooseController(it) }
             if (controller != null) {
                 val state = controller.playbackState?.state
                 if (state == PlaybackState.STATE_PLAYING) {
@@ -404,7 +453,7 @@ class FloatingLyricsService : Service() {
                     controller.transportControls.play()
                 }
             } else {
-                android.widget.Toast.makeText(this, "无法控制：请确保已启动 Spotify", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(this, "无法控制：未找到活动的媒体会话", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -414,11 +463,11 @@ class FloatingLyricsService : Service() {
         val component = ComponentName(this, LyricsNotificationListenerService::class.java)
         runCatching {
             val controller = manager.getActiveSessions(component)
-                .firstOrNull { it.packageName == com.lyricsplus.android.spotify.SpotifyBroadcasts.PACKAGE_NAME }
+                .let { SpotifyMediaSessionSelector.chooseController(it) }
             if (controller != null) {
                 controller.transportControls.skipToNext()
             } else {
-                android.widget.Toast.makeText(this, "无法控制：请确保已启动 Spotify", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(this, "无法控制：未找到活动的媒体会话", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -477,5 +526,6 @@ class FloatingLyricsService : Service() {
         const val EXTRA_OFFSET = "com.lyricsplus.android.extra.OFFSET"
         private const val PREF_FLOATING_WINDOW_X = "floating_window_x"
         private const val PREF_FLOATING_WINDOW_Y = "floating_window_y"
+        private const val MEDIA_SESSION_SYNC_INTERVAL_MS = 500L
     }
 }

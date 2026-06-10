@@ -82,9 +82,11 @@ class LyricsSyncService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Lyrics Sync",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_MIN
             ).apply {
                 description = "Keeps lyrics synchronized in the background"
+                setShowBadge(false)
+                setSound(null, null)
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
@@ -105,7 +107,8 @@ class LyricsSyncService : Service() {
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setSilent(true)
             .build()
     }
 

@@ -16,12 +16,16 @@ import com.lyricsplus.android.lyrics.LyricsProvider
 import com.lyricsplus.android.spotify.SpotifyMediaSnapshot
 import com.lyricsplus.android.spotify.SpotifyBroadcasts
 import com.lyricsplus.android.spotify.LyricsNotificationListenerService
+import com.lyricsplus.android.spotify.SpotifyMediaSessionSelector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
+
+const val PREF_PREFERRED_LYRICS_SOURCE = "preferred_lyrics_source"
+private const val PAUSE_FREEZE_TOLERANCE_MS = 2500L
 
 data class LyricsUiState(
     val nowPlaying: NowPlaying = NowPlaying(),
@@ -37,6 +41,7 @@ data class LyricsUiState(
     val activeLyricsSource: String = "未加载",
     val isInitializing: Boolean = true,
     val showFloatingLyrics: Boolean = false,
+    val showSuperIslandLyrics: Boolean = false,
     val inAppFontScale: Float = 1.0f
 )
 
@@ -50,6 +55,7 @@ class MainViewModel(
         readingMode = prefs.getInt("reading_mode", 1),
         keepScreenOn = prefs.getBoolean("keep_screen_on", false),
         showFloatingLyrics = prefs.getBoolean("show_floating_lyrics", false),
+        showSuperIslandLyrics = prefs.getBoolean("show_super_island_lyrics", false),
         inAppFontScale = prefs.getFloat("in_app_font_scale", 1.0f)
     ))
     val uiState: StateFlow<LyricsUiState> = _uiState.asStateFlow()
@@ -67,6 +73,12 @@ class MainViewModel(
         }
 
         viewModelScope.launch {
+            uiState.collect { state ->
+                AppLyricsStateStore.update(state)
+            }
+        }
+
+        viewModelScope.launch {
             com.lyricsplus.android.spotify.LyricsNotificationListenerService.snapshotFlow.collect { snapshot ->
                 if (snapshot != null) {
                     onMediaSnapshot(snapshot)
@@ -81,6 +93,9 @@ class MainViewModel(
         if (startFloating && (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M || 
                     android.provider.Settings.canDrawOverlays(context))) {
             startFloatingService(context)
+        }
+        if (prefs.getBoolean("show_super_island_lyrics", false)) {
+            startSuperIslandService(context)
         }
     }
 
@@ -135,7 +150,7 @@ class MainViewModel(
             val mergedTrack = nextTrack?.withPaletteFallback(state.nowPlaying)
             val updatedPlayback = if (nextPlayback != null) {
                 if (nextPlayback.isAccurate || state.playback.positionMs == 0L || !state.playback.isPlaying) {
-                    nextPlayback
+                    nextPlayback.normalizedAgainst(state.playback)
                 } else {
                     state.playback
                 }
@@ -174,6 +189,7 @@ class MainViewModel(
             track = intent.getStringExtra(SpotifyBroadcasts.EXTRA_TRACK).orEmpty(),
             artist = intent.getStringExtra(SpotifyBroadcasts.EXTRA_ARTIST).orEmpty(),
             album = intent.getStringExtra(SpotifyBroadcasts.EXTRA_ALBUM).orEmpty(),
+            mediaPackage = SpotifyBroadcasts.PACKAGE_NAME,
             durationSeconds = (intent.getIntExtra(SpotifyBroadcasts.EXTRA_LENGTH, 0) + 500) / 1000
         )
         val shouldFetch = track.hasTrack && shouldFetchLyrics(track)
@@ -217,7 +233,7 @@ class MainViewModel(
 
         _uiState.update {
             it.copy(
-                playback = playback,
+                playback = playback.normalizedAgainst(it.playback),
                 message = if (playback.isPlaying) "Playing" else "Paused",
                 lastBroadcastAction = SpotifyBroadcasts.PLAYBACK_STATE_CHANGED,
                 playbackSource = "spotify-broadcast"
@@ -230,6 +246,7 @@ class MainViewModel(
         val isNewTrack = lyricsRequestKey != requestKey
         if (isNewTrack) {
             preferredSource = null
+            prefs.edit().remove(PREF_PREFERRED_LYRICS_SOURCE).apply()
             currentLyricsScore = 0
         }
         lyricsRequestKey = requestKey
@@ -309,7 +326,7 @@ class MainViewModel(
     }
 
     private fun NowPlaying.requestKey(): String =
-        listOf(track, artist, album, durationSeconds).joinToString("|")
+        listOf(mediaPackage, track, artist, album).joinToString("|")
 
     private fun NowPlaying.withPaletteFallback(previous: NowPlaying): NowPlaying =
         if (requestKey() == previous.requestKey()) {
@@ -325,6 +342,34 @@ class MainViewModel(
             this
         }
 
+    private fun PlaybackAnchor.normalizedAgainst(previous: PlaybackAnchor): PlaybackAnchor {
+        if (isPlaying) {
+            val previousPosition = previous.currentPositionMs()
+            val currentPosition = currentPositionMs()
+            val delta = previousPosition - currentPosition
+            if (delta in 1..PAUSE_FREEZE_TOLERANCE_MS) {
+                return copy(
+                    positionMs = previousPosition.coerceAtLeast(0L),
+                    capturedElapsedMs = SystemClock.elapsedRealtime()
+                )
+            }
+            return this
+        }
+        if (!previous.isPlaying) return this
+
+        val extrapolatedPrevious = previous.currentPositionMs()
+        val delta = kotlin.math.abs(extrapolatedPrevious - positionMs)
+        val frozenPosition = if (delta <= PAUSE_FREEZE_TOLERANCE_MS) {
+            extrapolatedPrevious
+        } else {
+            positionMs
+        }
+        return copy(
+            positionMs = frozenPosition.coerceAtLeast(0L),
+            capturedElapsedMs = SystemClock.elapsedRealtime()
+        )
+    }
+
     fun switchLyricsSource() {
         val nowPlaying = _uiState.value.nowPlaying
         if (nowPlaying.hasTrack) {
@@ -336,6 +381,7 @@ class MainViewModel(
             }
 
             preferredSource = nextSource
+            prefs.edit().putString(PREF_PREFERRED_LYRICS_SOURCE, nextSource).apply()
 
             // Dismiss the previous Toast instantly and show the new selection
             activeToast?.cancel()
@@ -443,6 +489,13 @@ class MainViewModel(
                 }
                 getApplication<Application>().startService(intent)
             }
+            if (state.showSuperIslandLyrics) {
+                val intent = Intent(getApplication(), com.lyricsplus.android.lyrics.SuperIslandLyricsService::class.java).apply {
+                    action = com.lyricsplus.android.lyrics.SuperIslandLyricsService.ACTION_UPDATE_OFFSET
+                    putExtra(com.lyricsplus.android.lyrics.SuperIslandLyricsService.EXTRA_OFFSET, nextOffset)
+                }
+                getApplication<Application>().startService(intent)
+            }
             state.copy(lyricsOffsetMs = nextOffset)
         }
     }
@@ -499,6 +552,48 @@ class MainViewModel(
         }
     }
 
+    fun toggleSuperIslandLyrics() {
+        val context = getApplication<Application>()
+        _uiState.update { state ->
+            val nextVal = !state.showSuperIslandLyrics
+            if (nextVal) {
+                if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                    androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.POST_NOTIFICATIONS
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    android.widget.Toast.makeText(context, "请先授予通知权限后再开启超级岛歌词", android.widget.Toast.LENGTH_LONG).show()
+                    return@update state
+                }
+                if (prefs.getBoolean("super_island_xmsf_bypass", true)) {
+                    viewModelScope.launch { requestShizukuPermission(showToast = false) }
+                }
+                startSuperIslandService(context)
+            } else {
+                stopSuperIslandService(context)
+            }
+            prefs.edit().putBoolean("show_super_island_lyrics", nextVal).apply()
+            state.copy(showSuperIslandLyrics = nextVal)
+        }
+    }
+
+    private suspend fun requestShizukuPermission(showToast: Boolean = true) {
+        val context = getApplication<Application>()
+        val granted = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                com.lyricsplus.android.shizuku.requireShizukuPermissionGranted { true }
+            }.getOrDefault(false)
+        }
+        if (showToast) {
+            android.widget.Toast.makeText(
+                context,
+                if (granted) "Shizuku 已授权" else "Shizuku 未运行或授权失败",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     private fun startFloatingService(context: Context) {
         val intent = Intent(context, com.lyricsplus.android.lyrics.FloatingLyricsService::class.java).apply {
             putExtra(com.lyricsplus.android.lyrics.FloatingLyricsService.EXTRA_OFFSET, _uiState.value.lyricsOffsetMs)
@@ -512,6 +607,22 @@ class MainViewModel(
 
     private fun stopFloatingService(context: Context) {
         val intent = Intent(context, com.lyricsplus.android.lyrics.FloatingLyricsService::class.java)
+        context.stopService(intent)
+    }
+
+    private fun startSuperIslandService(context: Context) {
+        val intent = Intent(context, com.lyricsplus.android.lyrics.SuperIslandLyricsService::class.java).apply {
+            putExtra(com.lyricsplus.android.lyrics.SuperIslandLyricsService.EXTRA_OFFSET, _uiState.value.lyricsOffsetMs)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+    }
+
+    private fun stopSuperIslandService(context: Context) {
+        val intent = Intent(context, com.lyricsplus.android.lyrics.SuperIslandLyricsService::class.java)
         context.stopService(intent)
     }
 
@@ -590,6 +701,13 @@ class MainViewModel(
                     }
                     getApplication<Application>().startService(intent)
                 }
+                if (_uiState.value.showSuperIslandLyrics) {
+                    val intent = Intent(getApplication(), com.lyricsplus.android.lyrics.SuperIslandLyricsService::class.java).apply {
+                        action = com.lyricsplus.android.lyrics.SuperIslandLyricsService.ACTION_UPDATE_OFFSET
+                        putExtra(com.lyricsplus.android.lyrics.SuperIslandLyricsService.EXTRA_OFFSET, 0L)
+                    }
+                    getApplication<Application>().startService(intent)
+                }
                 onMediaSnapshot(snapshot)
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     android.widget.Toast.makeText(getApplication(), "歌词时间已同步重置", android.widget.Toast.LENGTH_SHORT).show()
@@ -658,7 +776,7 @@ class MainViewModel(
         val component = ComponentName(getApplication(), LyricsNotificationListenerService::class.java)
         return runCatching {
             manager.getActiveSessions(component)
-                .firstOrNull { it.packageName == SpotifyBroadcasts.PACKAGE_NAME }
+                .let { SpotifyMediaSessionSelector.chooseController(it) }
         }.getOrNull()
     }
 
@@ -688,7 +806,8 @@ class MainViewModel(
     fun syncNow() {
         // Sync floating lyrics preference state with UI instantly
         _uiState.update { it.copy(
-            showFloatingLyrics = prefs.getBoolean("show_floating_lyrics", false)
+            showFloatingLyrics = prefs.getBoolean("show_floating_lyrics", false),
+            showSuperIslandLyrics = prefs.getBoolean("show_super_island_lyrics", false)
         ) }
         
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {

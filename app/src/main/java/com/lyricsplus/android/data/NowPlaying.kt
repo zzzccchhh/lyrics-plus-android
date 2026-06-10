@@ -8,6 +8,7 @@ data class NowPlaying(
     val track: String = "",
     val artist: String = "",
     val album: String = "",
+    val mediaPackage: String = "",
     val durationSeconds: Int = 0,
     val backgroundStart: String? = null,
     val backgroundEnd: String? = null,

@@ -27,7 +27,7 @@ class LyricsNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName == SpotifyBroadcasts.PACKAGE_NAME) {
+        if (acceptsMediaNotification(sbn)) {
             val snapshot = sbn.toSpotifySnapshot()
             latestSnapshot = snapshot
             
@@ -39,7 +39,7 @@ class LyricsNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        if (sbn.packageName == SpotifyBroadcasts.PACKAGE_NAME) {
+        if (acceptsMediaNotification(sbn)) {
             refreshFromActiveNotifications()
         }
     }
@@ -55,8 +55,23 @@ class LyricsNotificationListenerService : NotificationListenerService() {
 
     private fun refreshFromActiveNotifications() {
         latestSnapshot = activeNotifications
-            ?.firstOrNull { it.packageName == SpotifyBroadcasts.PACKAGE_NAME }
+            ?.filter(::acceptsMediaNotification)
+            ?.maxByOrNull { sbn ->
+                val controller = sbn.notification.mediaSessionToken()
+                    ?.let { MediaController(this@LyricsNotificationListenerService, it) }
+                when (controller?.playbackState?.state) {
+                    PlaybackState.STATE_PLAYING -> 3
+                    PlaybackState.STATE_BUFFERING,
+                    PlaybackState.STATE_CONNECTING -> 2
+                    PlaybackState.STATE_PAUSED -> 1
+                    else -> 0
+                }
+            }
             ?.toSpotifySnapshot()
+    }
+
+    private fun acceptsMediaNotification(sbn: StatusBarNotification): Boolean {
+        return sbn.packageName == SpotifyBroadcasts.PACKAGE_NAME
     }
 
     private fun StatusBarNotification.toSpotifySnapshot(): SpotifyMediaSnapshot {
@@ -83,6 +98,7 @@ class LyricsNotificationListenerService : NotificationListenerService() {
                     track = title,
                     artist = artist,
                     album = album,
+                    mediaPackage = packageName,
                     durationSeconds = ((durationMs + 500) / 1000).toInt(),
                     backgroundStart = palette?.start,
                     backgroundEnd = palette?.end,
