@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -27,7 +28,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +80,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 private val AppBackground = Color(0xFF101010)
 private val Accent = Color(0xFF4AD295)
 private val Panel = Color(0xFF181A19)
+private val Outline = Color(0x1FFFFFFF)
+private val TextMuted = Color(0x998D9490)
 
 @Composable
 fun LyricsPlusApp(
@@ -916,63 +923,99 @@ private fun AboutProjectPage(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 22.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            Column {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
                     text = "关于项目",
                     color = Color.White,
-                    fontSize = 28.sp,
+                    fontSize = 32.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    lineHeight = 34.sp
+                    lineHeight = 38.sp
                 )
                 Text(
-                    text = "Lyrics Plus",
-                    color = Color(0x998D9490),
-                    fontSize = 13.sp,
+                    text = "Lyrics Plus · Android 歌词同步显示与沉浸式桌面歌词",
+                    color = TextMuted,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            AboutActionItem(title = "检测更新", subtitle = "检查 GitHub Release 是否有新版本", onClick = onCheckUpdates)
-            AboutActionItem(title = "项目地址(欢迎Star)", subtitle = "打开 GitHub 项目主页", onClick = onOpenProject)
-            AboutActionItem(title = "反馈问题", subtitle = "打开作者酷安主页", onClick = onOpenFeedback)
-            AboutActionItem(
-                title = when {
-                    !anonymousStatsAvailable -> "匿名统计: 未配置"
-                    anonymousStatsEnabled -> "匿名统计: 开启"
-                    else -> "匿名统计: 关闭"
-                },
-                subtitle = if (anonymousStatsAvailable) {
-                    "仅统计活跃用户、版本分布和功能使用摘要，不收集歌曲名或账号"
-                } else {
-                    "当前构建未配置统计端点，不会发送统计事件"
-                },
-                onClick = onToggleAnonymousStats
-            )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Panel, RoundedCornerShape(8.dp))
-                    .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(8.dp))
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "赞助说明",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
+            AboutSection(title = "项目") {
+                AboutActionItem(
+                    title = "检测更新",
+                    subtitle = "检查 GitHub Release 是否有新版本",
+                    onClick = onCheckUpdates
                 )
-                Text(
-                    text = "如果本项目帮助了你，可以给作者买一杯咖啡",
-                    color = Color(0xB3FFFFFF),
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp
+                AboutDivider()
+                AboutActionItem(
+                    title = "项目地址",
+                    subtitle = "打开 GitHub 项目主页，欢迎 Star",
+                    onClick = onOpenProject
                 )
+                AboutDivider()
+                AboutActionItem(
+                    title = "反馈问题",
+                    subtitle = "打开作者酷安主页",
+                    onClick = onOpenFeedback
+                )
+            }
+
+            AboutSection(title = "隐私") {
+                AboutSwitchItem(
+                    title = when {
+                        !anonymousStatsAvailable -> "匿名统计未配置"
+                        anonymousStatsEnabled -> "匿名统计已开启"
+                        else -> "匿名统计已关闭"
+                    },
+                    subtitle = if (anonymousStatsAvailable) {
+                        "仅统计活跃用户、版本分布和功能使用摘要，不收集歌曲名或账号"
+                    } else {
+                        "当前构建未配置统计端点，不会发送统计事件"
+                    },
+                    checked = anonymousStatsAvailable && anonymousStatsEnabled,
+                    enabled = anonymousStatsAvailable,
+                    onClick = onToggleAnonymousStats
+                )
+            }
+
+            AboutSection(title = "支持") {
+                AboutInfoItem(
+                    title = "赞助说明",
+                    subtitle = "如果本项目帮助了你，可以给作者买一杯咖啡"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutSection(
+    title: String,
+    content: @Composable () -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = title,
+            color = TextMuted,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 4.dp)
+        )
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            border = BorderStroke(1.dp, Outline)
+        ) {
+            Column {
+                content()
             }
         }
     }
@@ -984,15 +1027,73 @@ private fun AboutActionItem(
     subtitle: String,
     onClick: () -> Unit
 ) {
+    AboutListRow(
+        title = title,
+        subtitle = subtitle,
+        onClick = onClick,
+        trailing = {
+            Text(
+                text = "›",
+                color = Color(0x99FFFFFF),
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    )
+}
+
+@Composable
+private fun AboutSwitchItem(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    AboutListRow(
+        title = title,
+        subtitle = subtitle,
+        onClick = onClick,
+        enabled = enabled,
+        trailing = {
+            Switch(
+                checked = checked,
+                enabled = enabled,
+                onCheckedChange = { onClick() }
+            )
+        }
+    )
+}
+
+@Composable
+private fun AboutInfoItem(
+    title: String,
+    subtitle: String
+) {
+    AboutListRow(
+        title = title,
+        subtitle = subtitle,
+        onClick = {},
+        enabled = false,
+        trailing = null
+    )
+}
+
+@Composable
+private fun AboutListRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    trailing: (@Composable () -> Unit)? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Panel, RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(8.dp))
-            .noRippleClickable { onClick() }
+            .clickable(enabled = enabled) { onClick() }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Column(
             modifier = Modifier.weight(1f),
@@ -1000,25 +1101,28 @@ private fun AboutActionItem(
         ) {
             Text(
                 text = title,
-                color = Color.White,
+                color = if (enabled) Color.White else Color(0xB3FFFFFF),
                 fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                lineHeight = 20.sp
             )
             Text(
                 text = subtitle,
-                color = Color(0x998D9490),
+                color = TextMuted,
                 fontSize = 12.sp,
-                lineHeight = 16.sp
+                lineHeight = 17.sp
             )
         }
-        Text(
-            text = "›",
-            color = Color(0x99FFFFFF),
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 14.dp)
-        )
+        trailing?.invoke()
     }
+}
+
+@Composable
+private fun AboutDivider() {
+    HorizontalDivider(
+        color = Outline,
+        modifier = Modifier.padding(horizontal = 16.dp)
+    )
 }
 
 @Composable
