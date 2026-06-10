@@ -1,6 +1,8 @@
 package com.lyricsplus.android.ui
 
+import android.app.Activity
 import android.os.SystemClock
+import androidx.core.view.WindowCompat
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -76,6 +78,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.res.painterResource
+import com.lyricsplus.android.R
 
 private val AppBackground = Color(0xFF101010)
 private val Accent = Color(0xFF4AD295)
@@ -237,6 +241,27 @@ private fun LyricsOverlay(
 
     BackHandler(enabled = showAboutPage) {
         showAboutPage = false
+    }
+
+    DisposableEffect(showAboutPage) {
+        val activity = view.context as? Activity
+        val controller = activity?.window?.let { window ->
+            WindowCompat.getInsetsController(window, view)
+        }
+        val previousLightStatusBars = controller?.isAppearanceLightStatusBars
+        val previousLightNavigationBars = controller?.isAppearanceLightNavigationBars
+
+        if (showAboutPage && controller != null) {
+            controller.isAppearanceLightStatusBars = false
+            controller.isAppearanceLightNavigationBars = false
+        }
+
+        onDispose {
+            if (showAboutPage && controller != null) {
+                previousLightStatusBars?.let { controller.isAppearanceLightStatusBars = it }
+                previousLightNavigationBars?.let { controller.isAppearanceLightNavigationBars = it }
+            }
+        }
     }
 
     LaunchedEffect(playbackButtonsShowTrigger) {
@@ -750,7 +775,7 @@ private fun LyricsOverlay(
                     uriHandler.openUri("https://github.com/Artriai/lyrics-plus-android")
                 },
                 onOpenFeedback = {
-                    uriHandler.openUri("https://www.coolapk.com/u/Artriai")
+                    uriHandler.openUri("https://www.coolapk.com/u/2733246")
                 },
                 anonymousStatsAvailable = state.anonymousStatsAvailable,
                 anonymousStatsEnabled = state.anonymousStatsEnabled,
@@ -912,6 +937,12 @@ private fun AboutProjectPage(
     onToggleAnonymousStats: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showSponsorCodes by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = showSponsorCodes) {
+        showSponsorCodes = false
+    }
+
     Box(
         modifier = modifier
             .background(AppBackground)
@@ -983,10 +1014,25 @@ private fun AboutProjectPage(
             }
 
             AboutSection(title = "支持") {
-                AboutInfoItem(
+                AboutActionItem(
                     title = "赞助说明",
-                    subtitle = "如果本项目帮助了你，可以给作者买一杯咖啡"
+                    subtitle = if (showSponsorCodes) {
+                        "收起支付宝 / 微信支付二维码"
+                    } else {
+                        "如果本项目帮助了你，可以给作者买一杯咖啡"
+                    },
+                    onClick = { showSponsorCodes = !showSponsorCodes }
                 )
+                AnimatedVisibility(
+                    visible = showSponsorCodes,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column {
+                        AboutDivider()
+                        SponsorQrCodes()
+                    }
+                }
             }
         }
     }
@@ -1010,7 +1056,7 @@ private fun AboutSection(
         )
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(22.dp),
             colors = CardDefaults.cardColors(containerColor = Panel),
             border = BorderStroke(1.dp, Outline)
         ) {
@@ -1066,17 +1112,51 @@ private fun AboutSwitchItem(
 }
 
 @Composable
-private fun AboutInfoItem(
+private fun SponsorQrCodes() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        SponsorQrImage(
+            title = "支付宝",
+            resId = R.drawable.sponsor_alipay
+        )
+        SponsorQrImage(
+            title = "微信支付",
+            resId = R.drawable.sponsor_wechat
+        )
+    }
+}
+
+@Composable
+private fun SponsorQrImage(
     title: String,
-    subtitle: String
+    resId: Int
 ) {
-    AboutListRow(
-        title = title,
-        subtitle = subtitle,
-        onClick = {},
-        enabled = false,
-        trailing = null
-    )
+    Column(
+        modifier = Modifier.widthIn(max = 360.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = title,
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Image(
+            painter = painterResource(id = resId),
+            contentDescription = "$title 支付二维码",
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .border(1.dp, Outline, RoundedCornerShape(24.dp))
+        )
+    }
 }
 
 @Composable
