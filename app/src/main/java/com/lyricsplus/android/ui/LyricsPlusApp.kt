@@ -582,15 +582,6 @@ private fun LyricsOverlay(
                                     ) {
                                         viewModel.toggleSuperIslandLyrics()
                                     }
-                                    if (state.anonymousStatsAvailable) {
-                                        MenuActionRow(
-                                            label = if (state.anonymousStatsEnabled) "匿名统计: 开启" else "匿名统计: 关闭",
-                                            emoji = "📊",
-                                            active = state.anonymousStatsEnabled
-                                        ) {
-                                            viewModel.toggleAnonymousStats()
-                                        }
-                                    }
                                     MenuActionRow(label = "关于项目", emoji = "ℹ") {
                                         isExpanded = false
                                         showAboutPage = true
@@ -684,15 +675,6 @@ private fun LyricsOverlay(
                                 active = state.showSuperIslandLyrics
                             ) {
                                 viewModel.toggleSuperIslandLyrics()
-                            }
-                            if (state.anonymousStatsAvailable) {
-                                MenuActionRow(
-                                    label = if (state.anonymousStatsEnabled) "匿名统计: 开启" else "匿名统计: 关闭",
-                                    emoji = "📊",
-                                    active = state.anonymousStatsEnabled
-                                ) {
-                                    viewModel.toggleAnonymousStats()
-                                }
                             }
                             MenuActionRow(label = "关于项目", emoji = "ℹ") {
                                 isExpanded = false
@@ -794,13 +776,21 @@ private fun LyricsOverlay(
 
         if (showAboutPage) {
             AboutProjectPage(
-                onBack = { showAboutPage = false },
                 onCheckUpdates = { viewModel.checkForUpdates() },
                 onOpenProject = {
                     uriHandler.openUri("https://github.com/Artriai/lyrics-plus-android")
                 },
                 onOpenFeedback = {
                     uriHandler.openUri("https://www.coolapk.com/u/Artriai")
+                },
+                anonymousStatsAvailable = state.anonymousStatsAvailable,
+                anonymousStatsEnabled = state.anonymousStatsEnabled,
+                onToggleAnonymousStats = {
+                    if (state.anonymousStatsAvailable) {
+                        viewModel.toggleAnonymousStats()
+                    } else {
+                        android.widget.Toast.makeText(context, "当前构建未配置统计端点", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -945,10 +935,12 @@ private fun EmptyOverlay(
 
 @Composable
 private fun AboutProjectPage(
-    onBack: () -> Unit,
     onCheckUpdates: () -> Unit,
     onOpenProject: () -> Unit,
     onOpenFeedback: () -> Unit,
+    anonymousStatsAvailable: Boolean,
+    anonymousStatsEnabled: Boolean,
+    onToggleAnonymousStats: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -964,37 +956,20 @@ private fun AboutProjectPage(
                 .padding(horizontal = 24.dp, vertical = 22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(Color(0xFF202421), CircleShape)
-                        .border(1.dp, Color(0xFF343A36), CircleShape)
-                        .noRippleClickable { onBack() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("‹", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                }
-
-                Column {
-                    Text(
-                        text = "关于项目",
-                        color = Color.White,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        lineHeight = 34.sp
-                    )
-                    Text(
-                        text = "Lyrics Plus",
-                        color = Color(0x998D9490),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+            Column {
+                Text(
+                    text = "关于项目",
+                    color = Color.White,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = 34.sp
+                )
+                Text(
+                    text = "Lyrics Plus",
+                    color = Color(0x998D9490),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -1002,6 +977,19 @@ private fun AboutProjectPage(
             AboutActionItem(title = "检测更新", subtitle = "检查 GitHub Release 是否有新版本", onClick = onCheckUpdates)
             AboutActionItem(title = "项目地址(欢迎Star)", subtitle = "打开 GitHub 项目主页", onClick = onOpenProject)
             AboutActionItem(title = "反馈问题", subtitle = "打开作者酷安主页", onClick = onOpenFeedback)
+            AboutActionItem(
+                title = when {
+                    !anonymousStatsAvailable -> "匿名统计: 未配置"
+                    anonymousStatsEnabled -> "匿名统计: 开启"
+                    else -> "匿名统计: 关闭"
+                },
+                subtitle = if (anonymousStatsAvailable) {
+                    "仅统计活跃用户、版本分布和功能使用摘要，不收集歌曲名或账号"
+                } else {
+                    "当前构建未配置统计端点，不会发送统计事件"
+                },
+                onClick = onToggleAnonymousStats
+            )
 
             Column(
                 modifier = Modifier

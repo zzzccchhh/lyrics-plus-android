@@ -20,13 +20,13 @@ Lyrics Plus Android 可以在正式构建中启用匿名统计，用来了解用
 
 ## 关闭方式
 
-如果构建中配置了统计端点，App 的悬浮设置菜单会显示“匿名统计”开关。关闭后客户端不会继续发送统计事件。
+App 的“关于项目”页面会显示“匿名统计”状态。关闭后客户端不会继续发送统计事件；未配置统计端点的构建不会发送统计事件。
 
 ## 开发者构建
 
-默认构建不会发送统计事件，因为 `STATS_ENDPOINT` 为空。
+Debug 构建默认不会发送统计事件，因为 `STATS_ENDPOINT` 为空。Release 构建默认读取 `scripts/official-build.env` 中的公开统计端点。
 
-正式构建时可以通过 Gradle 参数注入公开端点：
+正式构建可以直接运行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\assemble-official-release.ps1
@@ -39,3 +39,8 @@ https://lyrics.artria.dpdns.org/v1/events
 ```
 
 GitHub Actions Release workflow 也调用同一套脚本；如需临时覆盖端点，可以在本地或 GitHub repository variables 中设置 `LYRICS_PLUS_STATS_ENDPOINT`。
+本地也可以通过 Gradle 参数覆盖：
+
+```powershell
+.\gradlew.bat installRelease -PlyricsPlusStatsEndpoint=https://example.com/v1/events
+```

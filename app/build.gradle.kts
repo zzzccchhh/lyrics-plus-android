@@ -7,6 +7,34 @@ plugins {
 fun String.asBuildConfigString(): String =
     "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
+fun officialStatsEndpointFromFile(): String {
+    val envFile = rootProject.file("scripts/official-build.env")
+    if (!envFile.isFile) return ""
+
+    return envFile.readLines()
+        .firstNotNullOfOrNull { line ->
+            val parts = line.split("=", limit = 2)
+            if (parts.size == 2 && parts[0].trim() == "LYRICS_PLUS_STATS_ENDPOINT") {
+                parts[1].trim().trim('"', '\'')
+            } else {
+                null
+            }
+        }
+        .orEmpty()
+}
+
+val explicitStatsEndpoint = providers.gradleProperty("lyricsPlusStatsEndpoint")
+val environmentStatsEndpoint = providers.environmentVariable("LYRICS_PLUS_STATS_ENDPOINT")
+val debugStatsEndpoint = explicitStatsEndpoint
+    .orElse(environmentStatsEndpoint)
+    .orElse("")
+    .get()
+val releaseStatsEndpoint = explicitStatsEndpoint
+    .orElse(environmentStatsEndpoint)
+    .orElse(providers.provider { officialStatsEndpointFromFile() })
+    .orElse("")
+    .get()
+
 android {
     namespace = "com.lyricsplus.android"
     compileSdk = 36
@@ -19,11 +47,6 @@ android {
         versionName = "1.2.0"
         
         resConfigs("en", "zh", "zh-rCN", "zh-rTW", "zh-rHK")
-        buildConfigField(
-            "String",
-            "STATS_ENDPOINT",
-            providers.gradleProperty("lyricsPlusStatsEndpoint").orElse("").get().asBuildConfigString()
-        )
     }
 
     buildFeatures {
@@ -64,12 +87,14 @@ android {
 
     buildTypes {
         release {
+            buildConfigField("String", "STATS_ENDPOINT", releaseStatsEndpoint.asBuildConfigString())
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("shared")
         }
         debug {
+            buildConfigField("String", "STATS_ENDPOINT", debugStatsEndpoint.asBuildConfigString())
             signingConfig = signingConfigs.getByName("shared")
         }
     }
