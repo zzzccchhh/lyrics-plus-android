@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.viewModels
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.ContextCompat
+import com.lyricsplus.android.analytics.AnonymousStats
 import com.lyricsplus.android.spotify.SpotifyBroadcasts
 import com.lyricsplus.android.spotify.LyricsSyncService
 import com.lyricsplus.android.ui.LyricsPlusApp
@@ -26,6 +27,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestNotificationPermissionIfNeeded()
+        AnonymousStats.trackAppOpen(this)
 
         // Request 120Hz high refresh rate natively for fluid animations on VRR screens
         val windowParams = window.attributes

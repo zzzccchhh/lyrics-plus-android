@@ -28,12 +28,15 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
-      # 步骤 1：直接使用 Gradle 编译 release 版本
+      # 步骤 1：使用官方构建脚本编译 release 版本
+      # 该脚本会注入公开统计端点，保证本地官方构建与 GitHub Actions 构建一致。
       # 注意：当前项目中 app/build.gradle.kts 的 release 配置使用的是 debug 签名配置：
       # signingConfig = signingConfigs.getByName("debug")
       # 这意味着它编译出来的 release APK 会自带 debug 签名，可直接安装测试。
       - name: Build with Gradle
-        run: ./gradlew assembleRelease
+        env:
+          LYRICS_PLUS_STATS_ENDPOINT: ${{ vars.LYRICS_PLUS_STATS_ENDPOINT }}
+        run: bash scripts/assemble-official-release.sh
 
       # 步骤 2（可选/推荐）：如果后续在 GitHub Secrets 配置了正式的签名密钥，可以使用以下步骤进行二次正式签名
       # 为了防止没有密钥时工作流报错，这里默认不启用。如果您配置了 Secrets，可以取消注释以下步骤，并修改 Gradle 编译为 assembleUnsignedRelease

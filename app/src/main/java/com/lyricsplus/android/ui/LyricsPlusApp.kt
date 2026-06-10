@@ -582,6 +582,15 @@ private fun LyricsOverlay(
                                     ) {
                                         viewModel.toggleSuperIslandLyrics()
                                     }
+                                    if (state.anonymousStatsAvailable) {
+                                        MenuActionRow(
+                                            label = if (state.anonymousStatsEnabled) "匿名统计: 开启" else "匿名统计: 关闭",
+                                            emoji = "📊",
+                                            active = state.anonymousStatsEnabled
+                                        ) {
+                                            viewModel.toggleAnonymousStats()
+                                        }
+                                    }
                                     MenuActionRow(label = "关于项目", emoji = "ℹ") {
                                         isExpanded = false
                                         showAboutPage = true
@@ -675,6 +684,15 @@ private fun LyricsOverlay(
                                 active = state.showSuperIslandLyrics
                             ) {
                                 viewModel.toggleSuperIslandLyrics()
+                            }
+                            if (state.anonymousStatsAvailable) {
+                                MenuActionRow(
+                                    label = if (state.anonymousStatsEnabled) "匿名统计: 开启" else "匿名统计: 关闭",
+                                    emoji = "📊",
+                                    active = state.anonymousStatsEnabled
+                                ) {
+                                    viewModel.toggleAnonymousStats()
+                                }
                             }
                             MenuActionRow(label = "关于项目", emoji = "ℹ") {
                                 isExpanded = false

@@ -46,6 +46,20 @@
      # 编译 Release 发行包
      ./gradlew.bat assembleRelease
      ```
+   * 官方发布构建（包含匿名统计公开端点）：
+     ```powershell
+     powershell -ExecutionPolicy Bypass -File .\scripts\assemble-official-release.ps1
+     ```
+
+---
+
+## 📊 匿名统计
+
+默认源码构建不会发送统计事件，因为统计端点为空。官方发布构建使用
+`scripts/official-build.env` 中的公开端点：`https://lyrics.artria.dpdns.org/v1/events`。
+GitHub Actions 也调用同一套官方构建脚本，以保证本地与云端 Release APK 的构建参数一致。
+
+统计只包含匿名安装 ID、App 版本、Android SDK、系统语言、功能开关与歌词源成功率等摘要信息，不收集歌曲名、歌手名、Spotify 账号或设备唯一标识。详情见 [docs/telemetry.md](docs/telemetry.md)。
 
 ---
 

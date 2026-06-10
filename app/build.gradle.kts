@@ -4,6 +4,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+fun String.asBuildConfigString(): String =
+    "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
     namespace = "com.lyricsplus.android"
     compileSdk = 36
@@ -16,6 +19,11 @@ android {
         versionName = "1.2.0"
         
         resConfigs("en", "zh", "zh-rCN", "zh-rTW", "zh-rHK")
+        buildConfigField(
+            "String",
+            "STATS_ENDPOINT",
+            providers.gradleProperty("lyricsPlusStatsEndpoint").orElse("").get().asBuildConfigString()
+        )
     }
 
     buildFeatures {

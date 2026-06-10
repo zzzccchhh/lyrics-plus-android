@@ -9,6 +9,7 @@ import android.media.session.PlaybackState
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lyricsplus.android.analytics.AnonymousStats
 import com.lyricsplus.android.data.LyricsLine
 import com.lyricsplus.android.data.NowPlaying
 import com.lyricsplus.android.data.PlaybackAnchor
@@ -42,7 +43,9 @@ data class LyricsUiState(
     val isInitializing: Boolean = true,
     val showFloatingLyrics: Boolean = false,
     val showSuperIslandLyrics: Boolean = false,
-    val inAppFontScale: Float = 1.0f
+    val inAppFontScale: Float = 1.0f,
+    val anonymousStatsEnabled: Boolean = true,
+    val anonymousStatsAvailable: Boolean = false
 )
 
 class MainViewModel(
@@ -56,7 +59,9 @@ class MainViewModel(
         keepScreenOn = prefs.getBoolean("keep_screen_on", false),
         showFloatingLyrics = prefs.getBoolean("show_floating_lyrics", false),
         showSuperIslandLyrics = prefs.getBoolean("show_super_island_lyrics", false),
-        inAppFontScale = prefs.getFloat("in_app_font_scale", 1.0f)
+        inAppFontScale = prefs.getFloat("in_app_font_scale", 1.0f),
+        anonymousStatsEnabled = AnonymousStats.isEnabled(application),
+        anonymousStatsAvailable = AnonymousStats.isAvailable()
     ))
     val uiState: StateFlow<LyricsUiState> = _uiState.asStateFlow()
 
@@ -304,6 +309,9 @@ class MainViewModel(
                 )
             }
 
+            val trackedSource = result.getOrNull()?.source ?: targetSource ?: "auto"
+            AnonymousStats.trackLyricsFetchResult(getApplication(), trackedSource, result.isSuccess)
+
             // Background pre-fetching when starting a song in Auto mode
             // This pre-warms the cache for other sources in the background,
             // providing an instant "秒切" experience if the user toggles sources manually.
@@ -424,6 +432,8 @@ class MainViewModel(
                     }
                 }
 
+                AnonymousStats.trackLyricsFetchResult(getApplication(), nextSource, result.isSuccess)
+
                 _uiState.update { state ->
                     result.fold(
                         onSuccess = { cacheResult ->
@@ -512,6 +522,7 @@ class MainViewModel(
         _uiState.update { state ->
             val nextMode = (state.readingMode + 1) % 3
             prefs.edit().putInt("reading_mode", nextMode).apply()
+            AnonymousStats.trackReadingModeChanged(getApplication(), nextMode)
             state.copy(readingMode = nextMode)
         }
     }
@@ -520,6 +531,7 @@ class MainViewModel(
         _uiState.update { state ->
             val nextVal = !state.keepScreenOn
             prefs.edit().putBoolean("keep_screen_on", nextVal).apply()
+            AnonymousStats.trackFeatureToggle(getApplication(), "keep_screen_on", nextVal)
             state.copy(keepScreenOn = nextVal)
         }
     }
@@ -548,6 +560,7 @@ class MainViewModel(
             }
             
             prefs.edit().putBoolean("show_floating_lyrics", nextVal).apply()
+            AnonymousStats.trackFeatureToggle(context, "floating_lyrics", nextVal)
             state.copy(showFloatingLyrics = nextVal)
         }
     }
@@ -574,7 +587,20 @@ class MainViewModel(
                 stopSuperIslandService(context)
             }
             prefs.edit().putBoolean("show_super_island_lyrics", nextVal).apply()
+            AnonymousStats.trackFeatureToggle(context, "super_island_lyrics", nextVal)
             state.copy(showSuperIslandLyrics = nextVal)
+        }
+    }
+
+    fun toggleAnonymousStats() {
+        val context = getApplication<Application>()
+        _uiState.update { state ->
+            val nextVal = !state.anonymousStatsEnabled
+            AnonymousStats.setEnabled(context, nextVal)
+            if (nextVal) {
+                AnonymousStats.trackFeatureToggle(context, "anonymous_stats", true)
+            }
+            state.copy(anonymousStatsEnabled = nextVal)
         }
     }
 
