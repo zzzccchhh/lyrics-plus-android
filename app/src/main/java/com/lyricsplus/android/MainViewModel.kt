@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 
 const val PREF_PREFERRED_LYRICS_SOURCE = "preferred_lyrics_source"
+private const val PREF_AUTO_CHECK_UPDATES = "auto_check_updates"
 private const val PAUSE_FREEZE_TOLERANCE_MS = 2500L
 
 data class LyricsUiState(
@@ -45,7 +46,8 @@ data class LyricsUiState(
     val showSuperIslandLyrics: Boolean = false,
     val inAppFontScale: Float = 1.0f,
     val anonymousStatsEnabled: Boolean = true,
-    val anonymousStatsAvailable: Boolean = false
+    val anonymousStatsAvailable: Boolean = false,
+    val autoCheckUpdatesEnabled: Boolean = false
 )
 
 class MainViewModel(
@@ -61,7 +63,8 @@ class MainViewModel(
         showSuperIslandLyrics = prefs.getBoolean("show_super_island_lyrics", false),
         inAppFontScale = prefs.getFloat("in_app_font_scale", 1.0f),
         anonymousStatsEnabled = AnonymousStats.isEnabled(application),
-        anonymousStatsAvailable = AnonymousStats.isAvailable()
+        anonymousStatsAvailable = AnonymousStats.isAvailable(),
+        autoCheckUpdatesEnabled = prefs.getBoolean(PREF_AUTO_CHECK_UPDATES, false)
     ))
     val uiState: StateFlow<LyricsUiState> = _uiState.asStateFlow()
 
@@ -71,6 +74,7 @@ class MainViewModel(
     private var lyricsFetchJob: kotlinx.coroutines.Job? = null
     private var activeToast: android.widget.Toast? = null
     private var currentLyricsScore: Int = 0
+    private var autoUpdateCheckStarted = false
 
     init {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
@@ -102,6 +106,8 @@ class MainViewModel(
         if (prefs.getBoolean("show_super_island_lyrics", false)) {
             startSuperIslandService(context)
         }
+
+        maybeCheckForUpdatesAutomatically()
     }
 
     fun onMediaSessionUnavailable() {
@@ -604,6 +610,19 @@ class MainViewModel(
         }
     }
 
+    fun toggleAutoCheckUpdates() {
+        val context = getApplication<Application>()
+        val nextVal = !_uiState.value.autoCheckUpdatesEnabled
+        prefs.edit().putBoolean(PREF_AUTO_CHECK_UPDATES, nextVal).apply()
+        AnonymousStats.trackFeatureToggle(context, "auto_check_updates", nextVal)
+        _uiState.update { state ->
+            state.copy(autoCheckUpdatesEnabled = nextVal)
+        }
+        if (nextVal) {
+            maybeCheckForUpdatesAutomatically()
+        }
+    }
+
     private suspend fun requestShizukuPermission(showToast: Boolean = true) {
         val context = getApplication<Application>()
         val granted = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -652,11 +671,13 @@ class MainViewModel(
         context.stopService(intent)
     }
 
-    fun checkForUpdates() {
-        val currentVersion = "1.2.0"
+    fun checkForUpdates(silent: Boolean = false) {
+        val currentVersion = BuildConfig.VERSION_NAME
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            if (!silent) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 android.widget.Toast.makeText(getApplication(), "正在检查更新...", android.widget.Toast.LENGTH_SHORT).show()
+                }
             }
             val client = okhttp3.OkHttpClient()
             val request = okhttp3.Request.Builder()
@@ -685,7 +706,9 @@ class MainViewModel(
                                 }
                                 getApplication<Application>().startActivity(intent)
                             } else {
-                                android.widget.Toast.makeText(getApplication(), "已是最新版本 (当前版本: v$currentVersion)", android.widget.Toast.LENGTH_LONG).show()
+                                if (!silent) {
+                                    android.widget.Toast.makeText(getApplication(), "已是最新版本 (当前版本: v$currentVersion)", android.widget.Toast.LENGTH_LONG).show()
+                                }
                             }
                         }
                     } else {
@@ -693,11 +716,19 @@ class MainViewModel(
                     }
                 }
             }.onFailure { error ->
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    android.widget.Toast.makeText(getApplication(), "检查更新失败: ${error.message}", android.widget.Toast.LENGTH_SHORT).show()
+                if (!silent) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        android.widget.Toast.makeText(getApplication(), "检查更新失败: ${error.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
+    }
+
+    private fun maybeCheckForUpdatesAutomatically() {
+        if (autoUpdateCheckStarted || !prefs.getBoolean(PREF_AUTO_CHECK_UPDATES, false)) return
+        autoUpdateCheckStarted = true
+        checkForUpdates(silent = true)
     }
 
     private fun isVersionNewer(latest: String, current: String): Boolean {

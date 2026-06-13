@@ -786,6 +786,8 @@ private fun LyricsOverlay(
                         android.widget.Toast.makeText(context, "当前构建未配置统计端点", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 },
+                autoCheckUpdatesEnabled = state.autoCheckUpdatesEnabled,
+                onToggleAutoCheckUpdates = { viewModel.toggleAutoCheckUpdates() },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -935,6 +937,8 @@ private fun AboutProjectPage(
     anonymousStatsAvailable: Boolean,
     anonymousStatsEnabled: Boolean,
     onToggleAnonymousStats: () -> Unit,
+    autoCheckUpdatesEnabled: Boolean,
+    onToggleAutoCheckUpdates: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showSponsorCodes by remember { mutableStateOf(false) }
@@ -966,13 +970,6 @@ private fun AboutProjectPage(
                     fontWeight = FontWeight.ExtraBold,
                     lineHeight = 38.sp
                 )
-                Text(
-                    text = "Lyrics Plus · Android 歌词同步显示与沉浸式桌面歌词",
-                    color = TextMuted,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    fontWeight = FontWeight.Medium
-                )
             }
 
             AboutSection(title = "项目") {
@@ -980,6 +977,18 @@ private fun AboutProjectPage(
                     title = "检测更新",
                     subtitle = "检查 GitHub Release 是否有新版本",
                     onClick = onCheckUpdates
+                )
+                AboutDivider()
+                AboutSwitchItem(
+                    title = "自动检测更新",
+                    subtitle = if (autoCheckUpdatesEnabled) {
+                        "启动 App 时静默检查，有新版本才提示"
+                    } else {
+                        "关闭后只保留手动检测"
+                    },
+                    checked = autoCheckUpdatesEnabled,
+                    enabled = true,
+                    onClick = onToggleAutoCheckUpdates
                 )
                 AboutDivider()
                 AboutActionItem(
