@@ -50,6 +50,7 @@ class SuperIslandLyricsService : Service() {
     private var mediaSyncInFlight = false
     private var lastMediaSyncElapsed = 0L
     private var hasAppState = false
+    private var collapsedForPausedPlayback = false
     private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == PREF_PREFERRED_LYRICS_SOURCE) {
             currentTrack?.let { track ->
@@ -116,8 +117,12 @@ class SuperIslandLyricsService : Service() {
         }
         scope.launch {
             LyricsNotificationListenerService.snapshotFlow.collect { snapshot ->
-                if (!hasAppState) {
-                    snapshot?.let(::applySnapshot)
+                if (snapshot != null) {
+                    if (hasAppState) {
+                        applyPlaybackOnlySnapshot(snapshot)
+                    } else {
+                        applySnapshot(snapshot)
+                    }
                 }
             }
         }
@@ -132,6 +137,23 @@ class SuperIslandLyricsService : Service() {
         currentLyricsSource = state.activeLyricsSource
         trackRequestKey = state.nowPlaying.stableIslandRequestKey()
         renderCurrentState()
+    }
+
+    private fun applyPlaybackOnlySnapshot(snapshot: SpotifyMediaSnapshot) {
+        val track = snapshot.nowPlaying
+        if (track != null && track.hasTrack) {
+            val currentKey = currentTrack?.stableIslandRequestKey()
+            val nextKey = track.stableIslandRequestKey()
+            if (currentTrack == null || currentKey != nextKey) {
+                applySnapshot(snapshot)
+                return
+            }
+        }
+
+        if (snapshot.playback != null) {
+            currentPlayback = snapshot.playback
+            renderCurrentState()
+        }
     }
 
     private fun syncCurrentMediaSnapshot() {
@@ -243,6 +265,12 @@ class SuperIslandLyricsService : Service() {
             runCatching { android.graphics.Color.parseColor(it) }.getOrNull()
         } ?: 0xFF4AD295.toInt()
 
+        if (!playback.isPlaying) {
+            collapseIslandForPause(track)
+            return
+        }
+
+        collapsedForPausedPlayback = false
         superIslandHandler.render(
             SuperIslandState(
                 title = track.track,
@@ -257,6 +285,13 @@ class SuperIslandLyricsService : Service() {
                 mediaPackage = track.mediaPackage.ifBlank { SpotifyBroadcasts.PACKAGE_NAME }
             )
         )
+    }
+
+    private fun collapseIslandForPause(track: NowPlaying) {
+        if (collapsedForPausedPlayback) return
+        collapsedForPausedPlayback = true
+        superIslandHandler.prepareForCollapsedState()
+        startForeground(SuperIslandHandler.NOTIFICATION_ID, buildPausedIslandNotification(track))
     }
 
     private data class TimedToken(
@@ -822,6 +857,28 @@ class SuperIslandLyricsService : Service() {
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOnlyAlertOnce(true)
+            .build()
+    }
+
+    private fun buildPausedIslandNotification(track: NowPlaying): Notification {
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val text = listOf(track.track, track.artist)
+            .filter { it.isNotBlank() }
+            .joinToString(" - ")
+            .ifBlank { "播放已暂停" }
+        return NotificationCompat.Builder(this, SuperIslandHandler.CHANNEL_ID)
+            .setContentTitle("播放已暂停")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_media_pause)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOnlyAlertOnce(true)
             .build()
     }

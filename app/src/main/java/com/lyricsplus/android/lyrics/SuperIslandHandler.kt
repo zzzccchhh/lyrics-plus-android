@@ -62,6 +62,20 @@ class SuperIslandHandler(
         }
     }
 
+    fun prepareForCollapsedState() {
+        if (!running) return
+        networkJob?.cancel()
+        lastSignature = ""
+        lastNotifyElapsed = 0L
+        firstNotification = true
+        if (xmsfCutActive) {
+            xmsfCutActive = false
+            scope.launch(Dispatchers.IO) {
+                XmsfNetworkHelper.setXmsfNetworkingEnabled(context, true)
+            }
+        }
+    }
+
     fun render(state: SuperIslandState) {
         if (!running) return
 
