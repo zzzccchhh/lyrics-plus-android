@@ -47,7 +47,7 @@ data class LyricsUiState(
     val inAppFontScale: Float = 1.0f,
     val anonymousStatsEnabled: Boolean = true,
     val anonymousStatsAvailable: Boolean = false,
-    val autoCheckUpdatesEnabled: Boolean = false
+    val autoCheckUpdatesEnabled: Boolean = true
 )
 
 class MainViewModel(
@@ -64,7 +64,7 @@ class MainViewModel(
         inAppFontScale = prefs.getFloat("in_app_font_scale", 1.0f),
         anonymousStatsEnabled = AnonymousStats.isEnabled(application),
         anonymousStatsAvailable = AnonymousStats.isAvailable(),
-        autoCheckUpdatesEnabled = prefs.getBoolean(PREF_AUTO_CHECK_UPDATES, false)
+        autoCheckUpdatesEnabled = prefs.getBoolean(PREF_AUTO_CHECK_UPDATES, true)
     ))
     val uiState: StateFlow<LyricsUiState> = _uiState.asStateFlow()
 
@@ -726,7 +726,7 @@ class MainViewModel(
     }
 
     private fun maybeCheckForUpdatesAutomatically() {
-        if (autoUpdateCheckStarted || !prefs.getBoolean(PREF_AUTO_CHECK_UPDATES, false)) return
+        if (autoUpdateCheckStarted || !prefs.getBoolean(PREF_AUTO_CHECK_UPDATES, true)) return
         autoUpdateCheckStarted = true
         checkForUpdates(silent = true)
     }
