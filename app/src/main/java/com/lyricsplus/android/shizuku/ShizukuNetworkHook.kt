@@ -62,7 +62,7 @@ object ShizukuNetworkHook {
             }
         }
 
-        throw IllegalStateException("No compatible Shizuku network backend. ${failures.joinToString(" | ")}")
+        throw IllegalStateException("未找到兼容的 Shizuku 网络后端。${failures.joinToString(" | ")}")
     }
 
     private fun getHookedService(backend: Backend): Any {
@@ -72,7 +72,7 @@ object ShizukuNetworkHook {
             cache[backend.stubClassName]?.let { return@synchronized it }
 
             val originalBinder = SystemServiceHelper.getSystemService(backend.serviceName)
-                ?: throw IllegalStateException("${backend.label} binder is null")
+                ?: throw IllegalStateException("${backend.label} Binder 为空")
             val wrapper: IBinder = ShizukuBinderWrapper(originalBinder)
             val stubClass = Class.forName(backend.stubClassName)
             val asInterface = stubClass.getMethod("asInterface", IBinder::class.java)
@@ -89,7 +89,7 @@ object ShizukuNetworkHook {
             it.name in names && it.parameterCount == args.size
         }
         if (methods.isEmpty()) {
-            throw NoSuchMethodException("Missing ${names.joinToString()}(${args.size}) on ${target.javaClass.name}")
+            throw NoSuchMethodException("${target.javaClass.name} 缺少方法 ${names.joinToString()}(${args.size})")
         }
 
         var lastError: Throwable? = null
@@ -105,7 +105,7 @@ object ShizukuNetworkHook {
             }
         }
 
-        throw lastError ?: IllegalStateException("No overload accepted ${names.joinToString()}")
+        throw lastError ?: IllegalStateException("没有可用的方法重载 ${names.joinToString()}")
     }
 
     private fun adaptArgs(parameterTypes: Array<Class<*>>, args: Array<out Any>): Array<Any> =

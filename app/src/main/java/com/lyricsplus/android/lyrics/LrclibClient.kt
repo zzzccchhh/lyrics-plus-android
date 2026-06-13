@@ -13,7 +13,7 @@ import kotlin.math.abs
 class LrclibClient {
     suspend fun findSyncedLyrics(track: NowPlaying): Result<LyricsSearchResult> = withContext(Dispatchers.IO) {
         runCatching {
-            fetchExact(track) ?: searchBestMatch(track) ?: error("No synced lyrics found on LRCLIB")
+            fetchExact(track) ?: searchBestMatch(track) ?: error("LRCLIB 未找到同步歌词")
         }
     }
 

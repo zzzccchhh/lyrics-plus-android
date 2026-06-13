@@ -92,14 +92,14 @@
       var accentColor = (track && track.backgroundAccent) || hashColor(seed + " accent", 74, 62);
       state.track = track || null;
       trackTitleEl.textContent = (track && track.track) || "Lyrics Plus";
-      trackArtistEl.textContent = (track && track.artist) || "Waiting for Spotify";
+      trackArtistEl.textContent = (track && track.artist) || "等待 Spotify";
       stageEl.style.setProperty("--bg-a", startColor);
       stageEl.style.setProperty("--bg-b", endColor);
       stageEl.style.setProperty("--bg-c", accentColor);
       stageEl.setAttribute("data-track-key", seed);
       report("track: " + seed + ", colors: " + startColor + " -> " + endColor);
     } catch (error) {
-      report("error:setTrack:" + error.message);
+      report("error:设置歌曲信息失败:" + error.message);
     }
   }
 
@@ -134,7 +134,7 @@
       renderFull();
       report("lyrics: " + state.lyrics.length + ", active: " + state.activeIndex);
     } catch (error) {
-      report("error:setLyrics:" + error.message);
+      report("error:设置歌词失败:" + error.message);
     }
   }
 
@@ -194,7 +194,7 @@
       }
       updatePlaybackPosition();
     } catch (error) {
-      report("error:setPlaybackState:" + error.message);
+      report("error:同步播放状态失败:" + error.message);
     }
   }
 
@@ -205,7 +205,7 @@
       renderFull();
       report("setReadingMode: " + state.readingMode);
     } catch (error) {
-      report("error:setReadingMode:" + error.message);
+      report("error:设置注音模式失败:" + error.message);
     }
   }
 
@@ -234,7 +234,7 @@
       }
       report("setRightAligned: " + rightAligned);
     } catch (error) {
-      report("error:setRightAligned:" + error.message);
+      report("error:设置横屏布局失败:" + error.message);
     }
   }
 
@@ -947,7 +947,7 @@
       stageEl.style.setProperty('--in-app-font-scale', s);
       renderFull();
     } catch (error) {
-      report("error:setInAppFontScale:" + error.message);
+      report("error:设置字号失败:" + error.message);
     }
   }
 
@@ -1053,7 +1053,7 @@
       }
       report("resize event handled");
     } catch (error) {
-      report("error:resizeListener:" + error.message);
+      report("error:窗口尺寸变化处理失败:" + error.message);
     }
   });
 

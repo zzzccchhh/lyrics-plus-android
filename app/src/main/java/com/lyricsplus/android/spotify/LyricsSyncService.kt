@@ -81,10 +81,10 @@ class LyricsSyncService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Lyrics Sync",
+                "歌词同步",
                 NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "Keeps lyrics synchronized in the background"
+                description = "在后台保持歌词同步"
                 setShowBadge(false)
                 setSound(null, null)
             }
@@ -103,7 +103,7 @@ class LyricsSyncService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Lyrics Plus")
-            .setContentText("Syncing with Spotify in background")
+            .setContentText("正在后台同步 Spotify")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

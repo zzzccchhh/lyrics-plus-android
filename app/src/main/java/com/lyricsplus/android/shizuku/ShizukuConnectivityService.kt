@@ -30,7 +30,7 @@ object ShizukuConnectivityService {
                 val connection = object : ServiceConnection {
                     override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
                         if (service == null) {
-                            continuation.resumeWithException(IllegalStateException("Shizuku service binder is null"))
+                            continuation.resumeWithException(IllegalStateException("Shizuku 服务 Binder 为空"))
                             return
                         }
                         val privileged = IPrivilegedConnectivityService.Stub.asInterface(service)
@@ -60,6 +60,6 @@ object ShizukuConnectivityService {
                     runCatching { Shizuku.unbindUserService(args, connection, true) }
                 }
             }
-        } ?: throw IllegalStateException("Timed out binding Shizuku connectivity service")
+        } ?: throw IllegalStateException("绑定 Shizuku 网络服务超时")
     }
 }

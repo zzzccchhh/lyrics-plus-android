@@ -14,16 +14,16 @@ import kotlin.math.abs
 class QQMusicClient {
     suspend fun findSyncedLyrics(track: NowPlaying): Result<LyricsSearchResult> = withContext(Dispatchers.IO) {
         runCatching {
-            val searchResult = searchSongMid(track) ?: error("Cannot find QQ Music track")
+            val searchResult = searchSongMid(track) ?: error("QQ 音乐未找到歌曲")
             
             // 1. Try Vkeys API
             val vkeysResult = runCatching {
                 val url = "https://api.vkeys.cn/v2/music/tencent/lyric?mid=${searchResult.mid}"
                 val response = requestGet(url)
-                if (response.code !in 200..299) error("Vkeys HTTP ${response.code}")
+                if (response.code !in 200..299) error("Vkeys 返回异常 (${response.code})")
                 
                 val json = JSONObject(response.body)
-                if (json.optInt("code", -1) != 200) error("Vkeys API error: ${json.optString("message")}")
+                if (json.optInt("code", -1) != 200) error("Vkeys 接口异常: ${json.optString("message")}")
                 
                 val dataObj = json.getJSONObject("data")
                 val yrc = dataObj.optString("yrc").orEmpty()
@@ -32,9 +32,9 @@ class QQMusicClient {
                 val roma = dataObj.optString("roma").orEmpty()
                 
                 val syncedBase = if (yrc.isNotBlank()) yrc else lrc
-                if (syncedBase.isBlank()) error("Vkeys lyrics were empty")
+                if (syncedBase.isBlank()) error("Vkeys 歌词为空")
                 
-                val synced = LrcParser.parse(syncedBase).ifEmpty { error("Vkeys parsed lyrics empty") }
+                val synced = LrcParser.parse(syncedBase).ifEmpty { error("Vkeys 解析后的歌词为空") }
                 val translation = LrcParser.parse(trans).filter { line ->
                     val clean = line.text.trim()
                     !(clean.all { it == '/' } && clean.isNotEmpty())
@@ -53,12 +53,12 @@ class QQMusicClient {
             }
             
             // 3. Fallback to Official QQ Music API on failure
-            val lyricData = fetchLyrics(searchResult.mid) ?: error("Cannot find QQ Music lyrics (Vkeys and Official failed)")
+            val lyricData = fetchLyrics(searchResult.mid) ?: error("QQ 音乐未找到歌词 (Vkeys 和官方接口均失败)")
             
             val lyricBase64 = lyricData.optString("lyric").orEmpty()
             val transBase64 = lyricData.optString("trans").orEmpty()
             
-            if (lyricBase64.isBlank()) error("QQ Music lyrics were empty")
+            if (lyricBase64.isBlank()) error("QQ 音乐歌词为空")
 
             val rawLyricEncoded = String(android.util.Base64.decode(lyricBase64, android.util.Base64.DEFAULT), Charsets.UTF_8)
             val rawTransEncoded = if (transBase64.isNotBlank()) {
@@ -68,7 +68,7 @@ class QQMusicClient {
             val rawLyric = unescapeHtml(rawLyricEncoded)
             val rawTrans = unescapeHtml(rawTransEncoded)
 
-            val synced = LrcParser.parse(rawLyric).ifEmpty { error("QQ Music synced lyrics empty") }
+            val synced = LrcParser.parse(rawLyric).ifEmpty { error("QQ 音乐同步歌词为空") }
             val translation = LrcParser.parse(rawTrans).filter { line ->
                 val clean = line.text.trim()
                 !(clean.all { it == '/' } && clean.isNotEmpty())

@@ -29,7 +29,7 @@ class LyricsWebController(context: Context) {
     var isReady by mutableStateOf(false)
         private set
 
-    var debugMessage by mutableStateOf("WebView starting")
+    var debugMessage by mutableStateOf("WebView 正在启动")
         private set
 
     var isFullLyricsMode by mutableStateOf(false)
@@ -69,13 +69,13 @@ class LyricsWebController(context: Context) {
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                val description = "webError ${error.errorCode} ${error.description} url=${request.url}"
+                val description = "error:WebView 加载失败 ${error.errorCode} ${error.description} url=${request.url}"
                 Log.e(WebLogTag, description)
                 setDebug(description)
             }
 
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                val description = "renderProcessGone didCrash=${detail.didCrash()}"
+                val description = "error:WebView 渲染进程已退出 didCrash=${detail.didCrash()}"
                 Log.e(WebLogTag, description)
                 setDebug(description)
                 return true

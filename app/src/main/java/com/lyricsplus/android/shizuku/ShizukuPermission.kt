@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.first
 import rikka.shizuku.Shizuku
 
 class ShizukuUnavailableException(cause: Throwable? = null) :
-    Exception("Shizuku is not running or permission was denied.", cause)
+    Exception("Shizuku 未运行或权限被拒绝。", cause)
 
 suspend fun <T> requireShizukuPermissionGranted(action: suspend () -> T): T {
     callbackFlow {

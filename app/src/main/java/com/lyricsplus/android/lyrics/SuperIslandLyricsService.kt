@@ -817,7 +817,7 @@ class SuperIslandLyricsService : Service() {
         )
         return NotificationCompat.Builder(this, SuperIslandHandler.CHANNEL_ID)
             .setContentTitle("♪")
-            .setContentText("Lyrics Plus")
+            .setContentText("超级岛歌词")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

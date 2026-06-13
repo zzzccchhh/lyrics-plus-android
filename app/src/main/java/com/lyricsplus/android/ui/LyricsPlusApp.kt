@@ -814,7 +814,7 @@ private fun DebugOverlay(message: String, modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.Start
     ) {
         Text(
-            text = "Lyrics stage debug",
+            text = "歌词渲染调试",
             color = Color.White,
             fontSize = 30.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -914,14 +914,14 @@ private fun EmptyOverlay(
                         colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.Black),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Open Spotify")
+                        Text("打开 Spotify")
                     }
                     Button(
                         onClick = onOpenNotificationAccess,
                         colors = ButtonDefaults.buttonColors(containerColor = Panel, contentColor = Color.White),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Notification Access")
+                        Text("通知访问权限")
                     }
                 }
             }

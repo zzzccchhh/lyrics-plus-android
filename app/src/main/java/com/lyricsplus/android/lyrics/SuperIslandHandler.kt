@@ -550,7 +550,7 @@ class SuperIslandHandler(
         private const val TIMED_SIDE_WEIGHT = 16
         private const val TIMED_LATIN_MAX_CHARS = 20
         private const val FIXED_MEASURE_TEXT = "Lyrics Plus"
-        private const val FIXED_CONTENT_TEXT = "Super Island Lyrics"
+        private const val FIXED_CONTENT_TEXT = "超级岛歌词"
         private const val SMALL_PROGRESS_UNREACH_COLOR = "#333333"
         private const val FULL_WIDTH_PLACEHOLDER = "\u3164"
         private const val HALF_WIDTH_PLACEHOLDER = "\u2800"

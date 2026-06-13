@@ -34,9 +34,9 @@ data class LyricsUiState(
     val playback: PlaybackAnchor = PlaybackAnchor(),
     val lyrics: List<LyricsLine> = emptyList(),
     val isLoadingLyrics: Boolean = false,
-    val message: String = "Open Spotify and play a song",
+    val message: String = "打开 Spotify 并播放歌曲",
     val lastBroadcastAction: String? = null,
-    val playbackSource: String = "none",
+    val playbackSource: String = "未连接",
     val lyricsOffsetMs: Long = 0L,
     val readingMode: Int = 1, // 0=None, 1=Romaji, 2=Furigana
     val keepScreenOn: Boolean = false,
@@ -115,7 +115,7 @@ class MainViewModel(
             if (state.playback.isPlaying) {
                 state.copy(
                     playback = state.playback.copy(isPlaying = false),
-                    message = "Spotify disconnected"
+                    message = "Spotify 已断开"
                 )
             } else {
                 state
@@ -139,7 +139,7 @@ class MainViewModel(
             SpotifyBroadcasts.QUEUE_CHANGED -> {
                 _uiState.update {
                     it.copy(
-                        message = "Queue changed",
+                        message = "播放队列已变化",
                         lastBroadcastAction = SpotifyBroadcasts.QUEUE_CHANGED
                     )
                 }
@@ -178,12 +178,12 @@ class MainViewModel(
                 lyricsOffsetMs = if (isNewTrack) 0L else state.lyricsOffsetMs,
                 isLoadingLyrics = if (isNewTrack) false else state.isLoadingLyrics,
                 message = when {
-                    mergedTrack?.hasTrack == true -> "Media session synced: ${snapshot.source}"
-                    nextPlayback?.isPlaying == true -> "Playing"
-                    nextPlayback != null -> "Paused"
+                    mergedTrack?.hasTrack == true -> "媒体会话已同步：${playbackSourceLabel(snapshot.source)}"
+                    nextPlayback?.isPlaying == true -> "播放中"
+                    nextPlayback != null -> "已暂停"
                     else -> state.message
                 },
-                playbackSource = snapshot.source,
+                playbackSource = playbackSourceLabel(snapshot.source),
                 isInitializing = false
             )
         }
@@ -212,9 +212,9 @@ class MainViewModel(
                 lyrics = if (shouldFetch) emptyList() else it.lyrics,
                 isLoadingLyrics = if (shouldFetch) false else it.isLoadingLyrics,
                 message = when {
-                    shouldFetch -> "Finding synced lyrics"
-                    track.hasTrack -> "Track metadata updated"
-                    else -> "Waiting for track metadata"
+                    shouldFetch -> "正在搜索同步歌词"
+                    track.hasTrack -> "歌曲信息已更新"
+                    else -> "等待歌曲信息"
                 },
                 lastBroadcastAction = SpotifyBroadcasts.METADATA_CHANGED,
                 isInitializing = false
@@ -245,9 +245,9 @@ class MainViewModel(
         _uiState.update {
             it.copy(
                 playback = playback.normalizedAgainst(it.playback),
-                message = if (playback.isPlaying) "Playing" else "Paused",
+                message = if (playback.isPlaying) "播放中" else "已暂停",
                 lastBroadcastAction = SpotifyBroadcasts.PLAYBACK_STATE_CHANGED,
-                playbackSource = "spotify-broadcast"
+                playbackSource = playbackSourceLabel("spotify-broadcast")
             )
         }
     }
@@ -269,7 +269,7 @@ class MainViewModel(
                 lyricsProvider.isCached(track)
             }
             if (!isCached) {
-                _uiState.update { it.copy(isLoadingLyrics = true, message = "Finding synced lyrics...") }
+                _uiState.update { it.copy(isLoadingLyrics = true, message = "正在搜索同步歌词...") }
             }
 
             val result = lyricsProvider.findSyncedLyrics(track, targetSource)
@@ -282,7 +282,7 @@ class MainViewModel(
                         state.copy(
                             lyrics = cacheResult.lyrics,
                             isLoadingLyrics = false,
-                            message = "Synced lyrics loaded",
+                            message = "同步歌词已加载",
                             activeLyricsSource = cacheResult.source
                         )
                     },
@@ -308,7 +308,7 @@ class MainViewModel(
                         state.copy(
                             lyrics = instrumentalLine,
                             isLoadingLyrics = false,
-                            message = error.message ?: "No synced lyrics found",
+                            message = userFacingLyricsError(error),
                             activeLyricsSource = failedSource
                         )
                     }
@@ -447,7 +447,7 @@ class MainViewModel(
                             state.copy(
                                 lyrics = cacheResult.lyrics,
                                 isLoadingLyrics = false,
-                                message = "Synced lyrics loaded",
+                                message = "同步歌词已加载",
                                 activeLyricsSource = cacheResult.source
                             )
                         },
@@ -470,7 +470,7 @@ class MainViewModel(
                             state.copy(
                                 lyrics = instrumentalLine,
                                 isLoadingLyrics = false,
-                                message = error.message ?: "No synced lyrics found",
+                                message = userFacingLyricsError(error),
                                 activeLyricsSource = failedSource
                             )
                         }
@@ -686,7 +686,7 @@ class MainViewModel(
                 .build()
             runCatching {
                 client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) throw java.io.IOException("Unexpected HTTP code $response")
+                    if (!response.isSuccessful) throw java.io.IOException("服务器返回异常 (${response.code})")
                     val body = response.body?.string().orEmpty()
                     val tagRegex = "\"tag_name\"\\s*:\\s*\"([^\"]+)\"".toRegex()
                     val matchResult = tagRegex.find(body)
@@ -718,7 +718,7 @@ class MainViewModel(
             }.onFailure { error ->
                 if (!silent) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        android.widget.Toast.makeText(getApplication(), "检查更新失败: ${error.message}", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(getApplication(), "检查更新失败: ${userFacingNetworkError(error)}", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -729,6 +729,32 @@ class MainViewModel(
         if (autoUpdateCheckStarted || !prefs.getBoolean(PREF_AUTO_CHECK_UPDATES, false)) return
         autoUpdateCheckStarted = true
         checkForUpdates(silent = true)
+    }
+
+    private fun playbackSourceLabel(source: String): String = when (source) {
+        "active-sessions" -> "媒体会话"
+        "notification-token" -> "通知监听"
+        "spotify-broadcast" -> "Spotify 广播"
+        "none" -> "未连接"
+        else -> source
+    }
+
+    private fun userFacingLyricsError(error: Throwable?): String {
+        val message = error?.message.orEmpty()
+        return when {
+            message.contains("网络") || message.contains("超时") || message.contains("HTTP", ignoreCase = true) ->
+                "歌词服务请求失败"
+            else -> "未找到同步歌词"
+        }
+    }
+
+    private fun userFacingNetworkError(error: Throwable): String {
+        val message = error.message.orEmpty()
+        return if (message.any { it in '\u4e00'..'\u9fff' }) {
+            message
+        } else {
+            "网络请求失败，请稍后重试"
+        }
     }
 
     private fun isVersionNewer(latest: String, current: String): Boolean {

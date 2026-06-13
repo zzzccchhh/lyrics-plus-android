@@ -130,7 +130,7 @@ class LyricsProvider(
                 val neteaseErr = neteaseResult.exceptionOrNull()
                 val qqErr = qqResult.exceptionOrNull()
                 if (neteaseErr is java.io.IOException || qqErr is java.io.IOException) {
-                    throw (neteaseErr as? java.io.IOException) ?: (qqErr as? java.io.IOException) ?: neteaseErr ?: qqErr ?: Exception("Network error")
+                    throw (neteaseErr as? java.io.IOException) ?: (qqErr as? java.io.IOException) ?: neteaseErr ?: qqErr ?: Exception("网络错误")
                 } else {
                     val instrumental = listOf(LyricsLine(0L, "纯音乐 / 无歌词"))
                     cacheDb.saveLyrics(trackKey, instrumental, "纯音乐")
@@ -166,7 +166,7 @@ class LyricsProvider(
                 "QQ音乐" -> qqMusicClient.findSyncedLyrics(track).getOrThrow()
                 "网易云音乐" -> neteaseClient.findSyncedLyrics(track).getOrThrow()
                 "LRCLIB" -> lrclibClient.findSyncedLyrics(track).getOrThrow()
-                else -> error("Unknown source: $sourceName")
+                else -> error("未知歌词源: $sourceName")
             }
 
             val base = searchResult.lyrics

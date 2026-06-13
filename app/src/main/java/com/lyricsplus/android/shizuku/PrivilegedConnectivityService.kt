@@ -29,10 +29,10 @@ class PrivilegedConnectivityService : IPrivilegedConnectivityService.Stub() {
         val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
         if (!finished) {
             process.destroyForcibly()
-            throw IllegalStateException("Command timed out: ${command.joinToString(" ")}")
+            throw IllegalStateException("命令执行超时: ${command.joinToString(" ")}")
         }
         if (process.exitValue() != 0) {
-            throw IllegalStateException("Command failed (${process.exitValue()}): ${command.joinToString(" ")} $output")
+            throw IllegalStateException("命令执行失败 (${process.exitValue()}): ${command.joinToString(" ")} $output")
         }
         Log.d(TAG, "Command ok: ${command.joinToString(" ")} $output")
     }

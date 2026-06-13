@@ -12,8 +12,8 @@ import kotlin.math.abs
 class NeteaseClient {
     suspend fun findSyncedLyrics(track: NowPlaying): Result<LyricsSearchResult> = withContext(Dispatchers.IO) {
         runCatching {
-            val searchResult = searchSongId(track) ?: error("Cannot find Netease track")
-            val lyricJson = fetchLyrics(searchResult.first) ?: error("Cannot find Netease lyrics")
+            val searchResult = searchSongId(track) ?: error("网易云音乐未找到歌曲")
+            val lyricJson = fetchLyrics(searchResult.first) ?: error("网易云音乐未找到歌词")
             if (lyricJson.optBoolean("nolyric", false)) {
                 return@runCatching LyricsSearchResult(listOf(LyricsLine(0L, "♪ 纯音乐 ♪")), searchResult.second)
             }
@@ -25,7 +25,7 @@ class NeteaseClient {
                 parseNeteaseYrc(yrcString)
             } else {
                 parseNeteaseLrc(lrcString)
-            }.ifEmpty { error("Netease synced lyrics were empty") }
+            }.ifEmpty { error("网易云音乐同步歌词为空") }
 
             val translation = parseNeteaseLrc(lyricJson.optJSONObject("tlyric")?.optString("lyric").orEmpty())
 
