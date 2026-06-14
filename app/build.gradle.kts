@@ -43,8 +43,8 @@ android {
         applicationId = "com.lyricsplus.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.3.0"
+        versionCode = 4
+        versionName = "1.3.1"
         
         resConfigs("en", "zh", "zh-rCN", "zh-rTW", "zh-rHK")
     }
@@ -127,6 +127,8 @@ dependencies {
     implementation("com.xzakota.hyper.notification:focus-api:1.4")
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    testImplementation("junit:junit:4.13.2")
 
     debugImplementation(composeBom)
     debugImplementation("androidx.compose.ui:ui-tooling")

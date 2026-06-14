@@ -30,8 +30,18 @@ class LyricsCacheDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_LYRICS")
-        onCreate(db)
+        if (oldVersion < 2) {
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_LYRICS")
+            onCreate(db)
+            return
+        }
+        if (oldVersion < 3) {
+            db.delete(
+                TABLE_LYRICS,
+                "$COLUMN_SOURCE IN (?, ?)",
+                arrayOf("网易云音乐", "QQ音乐")
+            )
+        }
     }
 
     fun getLyrics(trackKey: String): CachedLyricsResult? {
@@ -126,7 +136,7 @@ class LyricsCacheDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE
 
     companion object {
         private const val DATABASE_NAME = "lyrics_cache.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
         private const val TABLE_LYRICS = "cached_lyrics"
         private const val COLUMN_KEY = "track_key"
         private const val COLUMN_CONTENT = "content"

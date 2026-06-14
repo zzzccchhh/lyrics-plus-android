@@ -127,18 +127,11 @@ class NeteaseClient {
     private fun mergeTranslation(base: List<LyricsLine>, translation: List<LyricsLine>): List<LyricsLine> {
         if (translation.isEmpty() || base.looksChinese()) return base
 
-        return base.mapIndexed { index, line ->
-            val nextStart = base.getOrNull(index + 1)?.startTimeMs ?: Long.MAX_VALUE
-            val matched = translation
-                .filter { it.startTimeMs <= line.startTimeMs && it.startTimeMs < nextStart }
-                .minByOrNull { line.startTimeMs - it.startTimeMs }
-
-            if (matched != null && line.startTimeMs - matched.startTimeMs <= 8_000 && comparableText(line.text).isNotBlank()) {
-                line.copy(translation = matched.text)
-            } else {
-                line
-            }
-        }
+        return TimedLyricsMerger.mergeTranslation(
+            base = base,
+            translation = translation,
+            lineFilter = { line -> comparableText(line.text).isNotBlank() }
+        )
     }
 
     private fun request(url: String): HttpResponse {

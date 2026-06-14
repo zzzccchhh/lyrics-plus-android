@@ -174,35 +174,11 @@ class QQMusicClient {
     }
 
     private fun mergeTranslation(base: List<LyricsLine>, translation: List<LyricsLine>): List<LyricsLine> {
-        if (translation.isEmpty()) return base
-        return base.mapIndexed { index, line ->
-            val nextStart = base.getOrNull(index + 1)?.startTimeMs ?: Long.MAX_VALUE
-            val matched = translation
-                .filter { it.startTimeMs <= line.startTimeMs && it.startTimeMs < nextStart }
-                .minByOrNull { line.startTimeMs - it.startTimeMs }
-
-            if (matched != null && line.startTimeMs - matched.startTimeMs <= 8000) {
-                line.copy(translation = matched.text)
-            } else {
-                line
-            }
-        }
+        return TimedLyricsMerger.mergeTranslation(base, translation)
     }
 
     private fun mergeReading(base: List<LyricsLine>, reading: List<LyricsLine>): List<LyricsLine> {
-        if (reading.isEmpty()) return base
-        return base.mapIndexed { index, line ->
-            val nextStart = base.getOrNull(index + 1)?.startTimeMs ?: Long.MAX_VALUE
-            val matched = reading
-                .filter { it.startTimeMs <= line.startTimeMs && it.startTimeMs < nextStart }
-                .minByOrNull { line.startTimeMs - it.startTimeMs }
-
-            if (matched != null && line.startTimeMs - matched.startTimeMs <= 8000) {
-                line.copy(reading = matched.text)
-            } else {
-                line
-            }
-        }
+        return TimedLyricsMerger.mergeReading(base, reading)
     }
 
     private fun requestGet(url: String): HttpResponse {
