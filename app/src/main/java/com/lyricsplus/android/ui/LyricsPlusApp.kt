@@ -284,7 +284,7 @@ private fun LyricsOverlay(
                 val webView = webController.webView
                 (webView.parent as? ViewGroup)?.removeView(webView)
                 webView.layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
                 webView
@@ -350,7 +350,7 @@ private fun LyricsOverlay(
                             bitmap = state.nowPlaying.albumArt,
                             startColorHex = state.nowPlaying.backgroundStart,
                             endColorHex = state.nowPlaying.backgroundEnd,
-                            modifier = Modifier.size(150.dp)
+                            modifier = Modifier.size(200.dp)
                         )
 
                         Spacer(modifier = Modifier.height(20.dp))
@@ -383,7 +383,7 @@ private fun LyricsOverlay(
 
                         // Playback controls row
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             PlayPauseButton(
@@ -393,7 +393,7 @@ private fun LyricsOverlay(
 
                             Box(
                                 modifier = Modifier
-                                    .height(20.dp)
+                                    .height(28.dp)
                                     .width(1.dp)
                                     .background(Color(0x26FFFFFF))
                             )
@@ -1313,7 +1313,7 @@ private fun PlayPauseButton(
 ) {
     Box(
         modifier = modifier
-            .size(44.dp)
+            .size(56.dp)
             .clickable(
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                 indication = null
@@ -1321,7 +1321,7 @@ private fun PlayPauseButton(
         contentAlignment = Alignment.Center
     ) {
         if (isPlaying) {
-            Canvas(modifier = Modifier.size(24.dp)) {
+            Canvas(modifier = Modifier.size(32.dp)) {
                 val barWidth = size.width * 0.18f
                 val gap = size.width * 0.22f
                 val h = size.height * 0.55f
@@ -1341,7 +1341,7 @@ private fun PlayPauseButton(
                 )
             }
         } else {
-            Canvas(modifier = Modifier.size(24.dp)) {
+            Canvas(modifier = Modifier.size(32.dp)) {
                 val path = Path().apply {
                     moveTo(size.width * 0.32f, size.height * 0.22f)
                     lineTo(size.width * 0.82f, size.height * 0.5f)
@@ -1361,14 +1361,14 @@ private fun SkipNextButton(
 ) {
     Box(
         modifier = modifier
-            .size(44.dp)
+            .size(56.dp)
             .clickable(
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                 indication = null
             ) { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(24.dp)) {
+        Canvas(modifier = Modifier.size(32.dp)) {
             val path = Path().apply {
                 moveTo(size.width * 0.22f, size.height * 0.24f)
                 lineTo(size.width * 0.64f, size.height * 0.5f)
