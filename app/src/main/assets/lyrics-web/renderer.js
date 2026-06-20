@@ -72,9 +72,11 @@
   var flingRafId = null;
   var SCROLL_RESUME_DELAY = 1000; // 1s idle → resume auto-follow
   var RECOVERY_TIMEOUT = 2000; // force recovery if userScrolling stuck for 2s
+  var scrollBoundaries = null; // { minScroll: number, maxScroll: number }
 
   function forceRecover() {
     if (!userScrolling) return;
+    scrollBoundaries = null;
     userScrolling = false;
     wasScrollGesture = false;
     if (flingRafId !== null) { cancelAnimationFrame(flingRafId); flingRafId = null; }
@@ -92,6 +94,27 @@
       lyricsEl.style.transform = "translateY(" + (anchor - padTop - activeLine.offsetTop) + "px)";
     }
     updatePlaybackPosition();
+  }
+
+  function getScrollBoundaries() {
+    var lines = lyricsEl.querySelectorAll(".line");
+    if (!lines.length) return { minScroll: 0, maxScroll: 0 };
+    var containerHeight = getScrollContainer().clientHeight;
+    var cs = getComputedStyle(lyricsEl);
+    var padTop = parseFloat(cs.paddingTop) || 0;
+    var anchor = containerHeight * 0.33;
+    var firstLine = lines[0];
+    var lastLine = lines[lines.length - 1];
+    var minScroll = firstLine.offsetTop + padTop - anchor;
+    var maxScroll = lastLine.offsetTop + lastLine.clientHeight + padTop - anchor;
+    return { minScroll: Math.round(Math.min(minScroll, 0)), maxScroll: Math.round(Math.max(maxScroll, 0)) };
+  }
+
+  function clampWithRubberBand(offset, min, max) {
+    var STRENGTH = 0.35;
+    if (offset < min) return min - (min - offset) * STRENGTH;
+    if (offset > max) return max + (offset - max) * STRENGTH;
+    return offset;
   }
 
   function report(message) {
@@ -148,6 +171,7 @@
 
   function setLyrics(lines) {
     try {
+      scrollBoundaries = null;
       state.lyrics = Object.prototype.toString.call(lines) === "[object Array]" ? lines : [];
       if (state.lyrics.length > 0) {
         var firstLineStart = Number(state.lyrics[0].startTimeMs || 0);
@@ -1091,6 +1115,7 @@
       stageEl.classList.add("browsing");
       var match = lyricsEl.style.transform.match(/translateY\(([-\d.]+)px\)/);
       scrollOffset = match ? -parseFloat(match[1]) : 0;
+      scrollBoundaries = getScrollBoundaries();
     }
     // Exponential moving average for velocity (px/ms)
     var dt = now - lastMoveTime;
@@ -1100,12 +1125,13 @@
     }
     lastMoveTime = now;
     scrollOffset += dy;
+    scrollOffset = clampWithRubberBand(scrollOffset, scrollBoundaries.minScroll, scrollBoundaries.maxScroll);
     touchStartY = e.touches[0].clientY;
     lyricsEl.style.transform = "translateY(-" + scrollOffset + "px)";
   }, { passive: true });
 
   function startFling() {
-    var VELOCITY_SCALE = 800;  // velocity (px/ms) → px
+    var VELOCITY_SCALE = 300;  // velocity (px/ms) → px
     var MIN_DURATION = 200;
     var MAX_DURATION = 800;
 
@@ -1115,23 +1141,45 @@
     var duration = Math.round(MIN_DURATION + (absV / 10) * (MAX_DURATION - MIN_DURATION));
     duration = Math.max(MIN_DURATION, Math.min(MAX_DURATION, duration));
 
+    // Clamp fling target to hard boundaries and adjust duration proportionally
+    if (scrollBoundaries) {
+      var clamped = Math.max(scrollBoundaries.minScroll, Math.min(scrollBoundaries.maxScroll, targetOffset));
+      if (clamped !== targetOffset) {
+        var originalDelta = Math.abs(targetOffset - scrollOffset);
+        var clampedDelta = Math.abs(clamped - scrollOffset);
+        var ratio = originalDelta > 0 ? clampedDelta / originalDelta : 1;
+        targetOffset = clamped;
+        duration = Math.round(Math.min(MAX_DURATION, MIN_DURATION + ratio * (duration - MIN_DURATION)));
+      }
+    }
+
     var startOffset = scrollOffset;
     var startTime = performance.now();
 
-    function easeOutCubic(t) {
-      return 1 - Math.pow(1 - t, 3);
+    function easeOutQuint(t) {
+      return 1 - Math.pow(1 - t, 5);
     }
 
     function step() {
       var elapsed = performance.now() - startTime;
       var t = Math.min(elapsed / duration, 1);
-      var eased = easeOutCubic(t);
+      var eased = easeOutQuint(t);
       scrollOffset = startOffset + (targetOffset - startOffset) * eased;
+      // Snap back if beyond boundaries during animation (shouldn't happen with clamped target, but safe)
+      if (scrollBoundaries) {
+        scrollOffset = clampWithRubberBand(scrollOffset, scrollBoundaries.minScroll, scrollBoundaries.maxScroll);
+      }
       lyricsEl.style.transform = "translateY(-" + scrollOffset + "px)";
       if (t < 1) {
         flingRafId = requestAnimationFrame(step);
       } else {
         flingRafId = null;
+        // Snap back to boundary if released beyond limits
+        if (scrollBoundaries && (scrollOffset < scrollBoundaries.minScroll || scrollOffset > scrollBoundaries.maxScroll)) {
+          scrollOffset = Math.max(scrollBoundaries.minScroll, Math.min(scrollBoundaries.maxScroll, scrollOffset));
+          lyricsEl.style.transition = "";
+          lyricsEl.style.transform = "translateY(-" + scrollOffset + "px)";
+        }
         // Fling done → start idle timer for auto-resume
         scrollIdleTimer = setTimeout(function () {
           userScrolling = false;
@@ -1163,6 +1211,12 @@
     if (Math.abs(scrollVelocity) > 0.3) {
       startFling();
     } else {
+      // Snap back to boundary if released beyond limits
+      if (scrollBoundaries && (scrollOffset < scrollBoundaries.minScroll || scrollOffset > scrollBoundaries.maxScroll)) {
+        scrollOffset = Math.max(scrollBoundaries.minScroll, Math.min(scrollBoundaries.maxScroll, scrollOffset));
+        lyricsEl.style.transition = "";
+        lyricsEl.style.transform = "translateY(-" + scrollOffset + "px)";
+      }
       // No significant velocity → start idle timer immediately
       scrollIdleTimer = setTimeout(function () {
         userScrolling = false;
