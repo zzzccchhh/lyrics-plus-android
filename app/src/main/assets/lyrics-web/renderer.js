@@ -60,6 +60,40 @@
     }
   }
 
+  // --- User scroll/browse state (landscape lyrics pane) ---
+  var userScrolling = false;
+  var scrollOffset = 0;
+  var touchStartY = 0;
+  var scrollIdleTimer = null;
+  var wasScrollGesture = false; // suppress click after scroll
+  var scrollVelocity = 0;
+  var lastMoveTime = 0;
+  var lastTouchTime = 0; // timestamp of last user touch, for stuck-detection
+  var flingRafId = null;
+  var SCROLL_RESUME_DELAY = 1000; // 1s idle → resume auto-follow
+  var RECOVERY_TIMEOUT = 2000; // force recovery if userScrolling stuck for 2s
+
+  function forceRecover() {
+    if (!userScrolling) return;
+    userScrolling = false;
+    wasScrollGesture = false;
+    if (flingRafId !== null) { cancelAnimationFrame(flingRafId); flingRafId = null; }
+    if (scrollIdleTimer !== null) { clearTimeout(scrollIdleTimer); scrollIdleTimer = null; }
+    stageEl.classList.remove("browsing");
+    lyricsEl.style.transition = "";
+    // Snap to current playback position
+    var lines = lyricsEl.querySelectorAll(".line");
+    if (lines[state.activeIndex]) {
+      var activeLine = lines[state.activeIndex];
+      var containerHeight = getScrollContainer().clientHeight;
+      var cs = getComputedStyle(lyricsEl);
+      var padTop = parseFloat(cs.paddingTop) || 0;
+      var anchor = containerHeight * 0.33;
+      lyricsEl.style.transform = "translateY(" + (anchor - padTop - activeLine.offsetTop) + "px)";
+    }
+    updatePlaybackPosition();
+  }
+
   function report(message) {
     try {
       var text = String(message);
@@ -326,6 +360,10 @@
   function tick() {
     if (playback.isPlaying) {
       updatePlaybackPosition();
+      // Stuck-detection: if userScrolling is true but no touch for 5s, force recovery
+      if (userScrolling && lastTouchTime > 0 && performance.now() - lastTouchTime > RECOVERY_TIMEOUT) {
+        forceRecover();
+      }
       // Force 120Hz compositor scheduling on VRR Android screens.
       // Two signals are needed to convince the WebView compositor every frame has work:
       //   1. transform (compositor-only, no layout/paint) — matched by will-change:transform
@@ -806,6 +844,7 @@
     // Smoothly move the container so the active line stays at the top-quarter of the viewport
     // with 2 past lines visible above it
     requestAnimationFrame(function () {
+      if (userScrolling) return; // Don't fight user's manual scroll
       if (lines[active]) {
         var activeLine = lines[active];
         var containerHeight = getScrollContainer().clientHeight;
@@ -1003,12 +1042,132 @@
     report("error:" + message + "@" + line);
   };
 
-  // Click handler to toggle mode
+  // Click handler to toggle mode (skip if just finished a scroll gesture)
   stageEl.addEventListener("click", function (e) {
+    if (wasScrollGesture) {
+      wasScrollGesture = false;
+      return;
+    }
     if (state.lyrics.length > 0) {
       toggleFullLyricsMode();
     }
   });
+
+  // --- Touch-to-browse support (focused mode, landscape lyrics pane) ---
+  // Use stageEl (not lyricsEl) because .lyrics-viewport has pointer-events:none
+  stageEl.addEventListener("touchstart", function (e) {
+    if (state.isFullLyricsMode || state.lyrics.length === 0) return;
+    lastTouchTime = performance.now();
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+
+  stageEl.addEventListener("touchmove", function (e) {
+    if (state.isFullLyricsMode || state.lyrics.length === 0) return;
+    var now = performance.now();
+    var dy = touchStartY - e.touches[0].clientY;
+    if (!userScrolling) {
+      // First significant movement → enter browse mode
+      if (Math.abs(dy) < 10) return;
+      userScrolling = true;
+      wasScrollGesture = true;
+      if (flingRafId !== null) cancelAnimationFrame(flingRafId);
+      flingRafId = null;
+      scrollVelocity = 0;
+      lyricsEl.style.transition = "none";
+      stageEl.classList.add("browsing");
+      var match = lyricsEl.style.transform.match(/translateY\(([-\d.]+)px\)/);
+      scrollOffset = match ? -parseFloat(match[1]) : 0;
+    }
+    // Exponential moving average for velocity (px/ms)
+    var dt = now - lastMoveTime;
+    if (dt > 0 && dt < 100) {
+      var instantV = dy / dt;
+      scrollVelocity = scrollVelocity * 0.6 + instantV * 0.4;
+    }
+    lastMoveTime = now;
+    scrollOffset += dy;
+    touchStartY = e.touches[0].clientY;
+    lyricsEl.style.transform = "translateY(-" + scrollOffset + "px)";
+  }, { passive: true });
+
+  function startFling() {
+    var VELOCITY_SCALE = 800;  // velocity (px/ms) → px
+    var MIN_DURATION = 200;
+    var MAX_DURATION = 800;
+
+    var absV = Math.abs(scrollVelocity);
+    var targetDelta = absV * VELOCITY_SCALE;
+    var targetOffset = scrollOffset + Math.round(targetDelta) * (scrollVelocity > 0 ? 1 : -1);
+    var duration = Math.round(MIN_DURATION + (absV / 10) * (MAX_DURATION - MIN_DURATION));
+    duration = Math.max(MIN_DURATION, Math.min(MAX_DURATION, duration));
+
+    var startOffset = scrollOffset;
+    var startTime = performance.now();
+
+    function easeOutCubic(t) {
+      return 1 - Math.pow(1 - t, 3);
+    }
+
+    function step() {
+      var elapsed = performance.now() - startTime;
+      var t = Math.min(elapsed / duration, 1);
+      var eased = easeOutCubic(t);
+      scrollOffset = startOffset + (targetOffset - startOffset) * eased;
+      lyricsEl.style.transform = "translateY(-" + scrollOffset + "px)";
+      if (t < 1) {
+        flingRafId = requestAnimationFrame(step);
+      } else {
+        flingRafId = null;
+        // Fling done → start idle timer for auto-resume
+        scrollIdleTimer = setTimeout(function () {
+          userScrolling = false;
+          wasScrollGesture = false;
+          stageEl.classList.remove("browsing");
+          lyricsEl.style.transition = "";
+          var lines = lyricsEl.querySelectorAll(".line");
+          if (lines[state.activeIndex]) {
+            var activeLine = lines[state.activeIndex];
+            var containerHeight = getScrollContainer().clientHeight;
+            var cs = getComputedStyle(lyricsEl);
+            var padTop = parseFloat(cs.paddingTop) || 0;
+            var anchor = containerHeight * 0.33;
+            lyricsEl.style.transform = "translateY(" + (anchor - padTop - activeLine.offsetTop) + "px)";
+          }
+          updatePlaybackPosition();
+        }, SCROLL_RESUME_DELAY);
+      }
+    }
+    flingRafId = requestAnimationFrame(step);
+  }
+
+  stageEl.addEventListener("touchend", function () {
+    if (!userScrolling) return;
+    // Stop idle timer from any previous gesture
+    if (scrollIdleTimer !== null) clearTimeout(scrollIdleTimer);
+    if (flingRafId !== null) cancelAnimationFrame(flingRafId);
+
+    if (Math.abs(scrollVelocity) > 0.3) {
+      startFling();
+    } else {
+      // No significant velocity → start idle timer immediately
+      scrollIdleTimer = setTimeout(function () {
+        userScrolling = false;
+        wasScrollGesture = false;
+        stageEl.classList.remove("browsing");
+        lyricsEl.style.transition = "";
+        var lines = lyricsEl.querySelectorAll(".line");
+        if (lines[state.activeIndex]) {
+          var activeLine = lines[state.activeIndex];
+          var containerHeight = getScrollContainer().clientHeight;
+          var cs = getComputedStyle(lyricsEl);
+          var padTop = parseFloat(cs.paddingTop) || 0;
+          var anchor = containerHeight * 0.33;
+          lyricsEl.style.transform = "translateY(" + (anchor - padTop - activeLine.offsetTop) + "px)";
+        }
+        updatePlaybackPosition();
+      }, SCROLL_RESUME_DELAY);
+    }
+  }, { passive: true });
 
   // Re-calculate layout and scroll offsets on window resize (rotation / unfolding)
   window.addEventListener("resize", function () {

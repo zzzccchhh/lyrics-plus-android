@@ -457,6 +457,13 @@ body {
   margin-bottom: 18px;
 }
 
+/* Browse mode: user is manually scrolling — remove blur/transparency on all lines */
+.stage.browsing .line {
+  opacity: 1 !important;
+  filter: none !important;
+  transform: scale(1) !important;
+}
+
 /* --- Upgraded Ruby Furigana Layouts --- */
 ruby {
   ruby-align: center;
