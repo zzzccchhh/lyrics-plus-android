@@ -669,8 +669,8 @@
       loopEnd = totalLines - 1;
     } else {
       // Only lines near prevActive and active need updates
-      loopStart = Math.max(0, Math.min(prevActive, active) - 4);
-      loopEnd = Math.min(totalLines - 1, Math.max(prevActive, active) + 4);
+      loopStart = Math.max(0, Math.min(prevActive, active) - 8);
+      loopEnd = Math.min(totalLines - 1, Math.max(prevActive, active) + 8);
     }
 
     var hasReadingMode = state.readingMode > 0;
