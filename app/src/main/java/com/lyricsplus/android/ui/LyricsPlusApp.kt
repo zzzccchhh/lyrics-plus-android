@@ -299,6 +299,7 @@ private fun LyricsOverlay(
                 state = state,
                 onOpenSpotify = onOpenSpotify,
                 onOpenNotificationAccess = onOpenNotificationAccess,
+                isMultiPane = isMultiPane,
                 modifier = Modifier
                     .fillMaxSize()
                     .background(AppBackground)
@@ -834,94 +835,185 @@ private fun EmptyOverlay(
     state: LyricsUiState,
     onOpenSpotify: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
+    isMultiPane: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val hasTrack = state.nowPlaying.hasTrack
     val isLoading = state.isLoadingLyrics
 
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        if (hasTrack && !isLoading) {
-            // Instrumental / no lyrics found state — clean centered display
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "♪",
-                    color = Color(0x66FFFFFF),
-                    fontSize = 64.sp
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "纯音乐 / 无歌词",
-                    color = Color(0xB3FFFFFF),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "${state.nowPlaying.track} - ${state.nowPlaying.artist}",
-                    color = Color(0x66FFFFFF),
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        } else if (hasTrack && isLoading) {
-            // Loading lyrics state
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "正在搜索歌词...",
-                    color = Color(0xB3FFFFFF),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "${state.nowPlaying.track} - ${state.nowPlaying.artist}",
-                    color = Color(0x66FFFFFF),
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+    Box(modifier = modifier.fillMaxSize()) {
+        if (isMultiPane) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Left 45%
+                Box(modifier = Modifier.weight(0.45f).fillMaxHeight()) {
+                    if (!hasTrack) {
+                        // Welcome state: "Lyrics Plus" at top 1/4
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(0.dp)
+                        ) {
+                            Spacer(modifier = Modifier.weight(0.25f))
+                            Text(
+                                text = state.message,
+                                color = Color.White,
+                                fontSize = 30.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                lineHeight = 36.sp
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "${state.playbackSource} - ${state.playback.positionMs / 1000}s",
+                                color = Color(0xFF8D9490),
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(22.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    onClick = onOpenSpotify,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.Black),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("打开 Spotify")
+                                }
+                                Button(
+                                    onClick = onOpenNotificationAccess,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Panel, contentColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("通知访问权限")
+                                }
+                            }
+                            Spacer(modifier = Modifier.weight(0.75f))
+                        }
+                    }
+                }
+
+                // Right 55% — centered loading / no-lyrics / empty
+                Box(
+                    modifier = Modifier.weight(0.55f).fillMaxHeight(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (hasTrack && !isLoading) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "♪",
+                                color = Color(0x66FFFFFF),
+                                fontSize = 64.sp
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "纯音乐 / 无歌词",
+                                color = Color(0xB3FFFFFF),
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "${state.nowPlaying.track} - ${state.nowPlaying.artist}",
+                                color = Color(0x66FFFFFF),
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    } else if (hasTrack && isLoading) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "正在搜索歌词...",
+                                color = Color(0xB3FFFFFF),
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "${state.nowPlaying.track} - ${state.nowPlaying.artist}",
+                                color = Color(0x66FFFFFF),
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
             }
         } else {
-            // No track playing — setup/welcome state
-            Column(
-                horizontalAlignment = Alignment.Start
+            // Portrait: full-screen centered layout
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = state.message,
-                    color = Color.White,
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    lineHeight = 36.sp
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "${state.playbackSource} - ${state.playback.positionMs / 1000}s",
-                    color = Color(0xFF8D9490),
-                    fontSize = 14.sp
-                )
-                Spacer(modifier = Modifier.height(22.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(
-                        onClick = onOpenSpotify,
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.Black),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("打开 Spotify")
+                if (hasTrack && !isLoading) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "♪",
+                            color = Color(0x66FFFFFF),
+                            fontSize = 64.sp
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "纯音乐 / 无歌词",
+                            color = Color(0xB3FFFFFF),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "${state.nowPlaying.track} - ${state.nowPlaying.artist}",
+                            color = Color(0x66FFFFFF),
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    Button(
-                        onClick = onOpenNotificationAccess,
-                        colors = ButtonDefaults.buttonColors(containerColor = Panel, contentColor = Color.White),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("通知访问权限")
+                } else if (hasTrack && isLoading) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "正在搜索歌词...",
+                            color = Color(0xB3FFFFFF),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "${state.nowPlaying.track} - ${state.nowPlaying.artist}",
+                            color = Color(0x66FFFFFF),
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                } else {
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text(
+                            text = state.message,
+                            color = Color.White,
+                            fontSize = 30.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            lineHeight = 36.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "${state.playbackSource} - ${state.playback.positionMs / 1000}s",
+                            color = Color(0xFF8D9490),
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(22.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(
+                                onClick = onOpenSpotify,
+                                colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.Black),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("打开 Spotify")
+                            }
+                            Button(
+                                onClick = onOpenNotificationAccess,
+                                colors = ButtonDefaults.buttonColors(containerColor = Panel, contentColor = Color.White),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("通知访问权限")
+                            }
+                        }
                     }
                 }
             }
