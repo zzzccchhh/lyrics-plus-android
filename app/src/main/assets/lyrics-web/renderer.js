@@ -287,7 +287,8 @@
       var progress = 0;
       
       if (currentPosition >= end) {
-        targetClass = "syllable past";
+        // Keep as active with 100% progress so it stays white until whole line finishes
+        targetClass = "syllable active";
         progress = 100;
       } else if (currentPosition >= start && currentPosition < end) {
         targetClass = "syllable active";

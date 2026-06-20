@@ -162,6 +162,7 @@ body {
   text-shadow: 0 10px 32px rgba(0, 0, 0, 0.16);
 }
 
+
 .line.active .translation {
   color: var(--translation);
 }
@@ -478,13 +479,13 @@ rt {
   display: inline-block;
   white-space: pre;
   color: rgba(255, 255, 255, 0.35); /* Dim inactive color */
-  transition: color 250ms ease;
+  transition: color 400ms cubic-bezier(0.22, 0.68, 0.35, 1);
   text-shadow: none !important; /* Completely eliminate glaring shadow pop-in and glowing halos */
 }
 
 .syllable.past {
-  color: #ffffff; /* Fully highlighted active color */
-  transition: none !important; /* Eliminate flash when transitioning from active */
+  color: rgba(255, 255, 255, 0.35); /* Same as unplayed syllable dim color */
+  transition: color 250ms ease; /* Smoothly fade white→dim after syllable completes */
 }
 
 .syllable.active {
@@ -516,4 +517,14 @@ rt {
   ) !important;
   -webkit-background-clip: text !important;
   -webkit-text-fill-color: transparent !important;
+}
+
+/* When line becomes past: reset active syllable styling back to dim */
+.line:not(.active) .syllable.active,
+.line:not(.active) .syllable.active ruby,
+.line:not(.active) .syllable.active rt {
+  color: rgba(255, 255, 255, 0.35);
+  background: none !important;
+  -webkit-background-clip: initial !important;
+  -webkit-text-fill-color: initial !important;
 }
