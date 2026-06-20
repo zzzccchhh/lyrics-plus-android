@@ -232,8 +232,10 @@
 
       if (playback.isPlaying) {
         stageEl.classList.remove("paused");
+        startTick();
       } else {
         stageEl.classList.add("paused");
+        stopTick();
       }
       updatePlaybackPosition();
     } catch (error) {
@@ -357,27 +359,39 @@
   }
 
   var vrrToggle = false;
-  function tick() {
-    if (playback.isPlaying) {
-      updatePlaybackPosition();
-      // Stuck-detection: if userScrolling is true but no touch for 5s, force recovery
-      if (userScrolling && lastTouchTime > 0 && performance.now() - lastTouchTime > RECOVERY_TIMEOUT) {
-        forceRecover();
+  var rafId = null;
+  function startTick() {
+    if (rafId !== null) return;
+    function tick() {
+      if (playback.isPlaying) {
+        updatePlaybackPosition();
+        // Stuck-detection: if userScrolling is true but no touch for 5s, force recovery
+        if (userScrolling && lastTouchTime > 0 && performance.now() - lastTouchTime > RECOVERY_TIMEOUT) {
+          forceRecover();
+        }
+        // Force 120Hz compositor scheduling on VRR Android screens.
+        // Two signals are needed to convince the WebView compositor every frame has work:
+        //   1. transform (compositor-only, no layout/paint) — matched by will-change:transform
+        //   2. opacity micro-alternation (pixel-level change) — forces actual pixel diff
+        // Together they prevent the WebView from throttling RAF to 60Hz.
+        if (vrrKeepaliveEl) {
+          vrrToggle = !vrrToggle;
+          vrrKeepaliveEl.style.transform = vrrToggle ? "translateX(0.5px)" : "translateX(0px)";
+          vrrKeepaliveEl.style.opacity = vrrToggle ? "0.015" : "0.01";
+        }
       }
-      // Force 120Hz compositor scheduling on VRR Android screens.
-      // Two signals are needed to convince the WebView compositor every frame has work:
-      //   1. transform (compositor-only, no layout/paint) — matched by will-change:transform
-      //   2. opacity micro-alternation (pixel-level change) — forces actual pixel diff
-      // Together they prevent the WebView from throttling RAF to 60Hz.
-      if (vrrKeepaliveEl) {
-        vrrToggle = !vrrToggle;
-        vrrKeepaliveEl.style.transform = vrrToggle ? "translateX(0.5px)" : "translateX(0px)";
-        vrrKeepaliveEl.style.opacity = vrrToggle ? "0.015" : "0.01";
-      }
+      rafId = requestAnimationFrame(tick);
     }
-    requestAnimationFrame(tick);
+    rafId = requestAnimationFrame(tick);
   }
-  requestAnimationFrame(tick);
+  function stopTick() {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+  // Start the tick loop if already playing (e.g. WebView loaded mid-track)
+  if (playback.isPlaying) { startTick(); }
 
   function findActiveIndex(positionMs) {
     var lyrics = state.lyrics;
