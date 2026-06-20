@@ -411,8 +411,8 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  /* Vertical centering within the safe area (status bar / cutout) */
+  justify-content: flex-start;
+  /* translateY in JS handles vertical positioning to keep active line centered */
   padding-top: var(--status-bar-height, 28px);
   padding-bottom: var(--status-bar-height, 28px);
 }
@@ -424,38 +424,35 @@ body {
   align-items: flex-end;
 }
 
-/* Right-align text and scale transitions from right center in right-aligned mode */
-/* margin-right includes --safe-right for camera cutout in reverse landscape */
+/* Center-align text in right-aligned mode */
 .stage.right-aligned .line {
   width: calc(100% - 24px - 24px - var(--safe-right, 0px));
   margin-left: auto;
   margin-right: calc(24px + var(--safe-right, 0px));
-  text-align: right;
-  transform-origin: right center;
+  text-align: center;
+  transform-origin: center center;
 }
 
-/* In landscape focused mode, show ONLY the active line to fit tight screen heights */
-.stage.right-aligned:not(.full-lyrics-mode) .line:not(.active) {
-  display: none !important;
-}
-
-/* Dynamic responsive text sizing for right-aligned focused mode — sizes set by JS */
-.stage.right-aligned:not(.full-lyrics-mode) .line {
-  margin-bottom: 0 !important;
-}
+/* Focused-mode font sizes for right-aligned (landscape split) layout */
+/* Smaller than default/@media to fit multiple lines in a narrower right pane */
 .stage.right-aligned:not(.full-lyrics-mode) .text {
-  font-size: var(--focused-text-size, 36px) !important;
-  line-height: 1.2 !important;
+  font-size: calc(36px * var(--in-app-font-scale, 1));
+  line-height: 1.2;
 }
 .stage.right-aligned:not(.full-lyrics-mode) .translation {
-  font-size: var(--focused-trans-size, 22px) !important;
-  margin-top: 4px !important;
-  line-height: 1.2 !important;
+  font-size: calc(22px * var(--in-app-font-scale, 1));
+  margin-top: 5px;
+  line-height: 1.2;
 }
 .stage.right-aligned:not(.full-lyrics-mode) .romaji {
-  font-size: var(--focused-romaji-size, 15px) !important;
-  margin-bottom: 2px !important;
-  line-height: 1.1 !important;
+  font-size: calc(15px * var(--in-app-font-scale, 1));
+  margin-bottom: 2px;
+  line-height: 1.1;
+}
+
+/* Tighten line spacing in landscape split to show more lines */
+.stage.right-aligned:not(.full-lyrics-mode) .line {
+  margin-bottom: 18px;
 }
 
 /* --- Upgraded Ruby Furigana Layouts --- */

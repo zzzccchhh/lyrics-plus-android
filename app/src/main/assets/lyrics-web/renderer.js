@@ -789,15 +789,15 @@
       }
     }
 
-    // Smoothly move the container so the active line stays at the anchor position
-    // In right-aligned mode, CSS flex centering handles positioning
+    // Smoothly move the container so the active line stays at the center of the viewport
     requestAnimationFrame(function () {
-      if (!_isRightAligned && lines[active]) {
+      if (lines[active]) {
         var activeLine = lines[active];
         var offset = activeLine.offsetTop;
-        lyricsEl.style.transform = "translateY(-" + offset + "px)";
+        var containerHeight = getScrollContainer().clientHeight;
+        var centerOffset = offset - (containerHeight / 2) + (activeLine.offsetHeight / 2);
+        lyricsEl.style.transform = "translateY(-" + Math.max(0, centerOffset) + "px)";
       }
-      fitFocusedFontSize();
     });
   }
 
@@ -849,11 +849,10 @@
         if (state.isFullLyricsMode) {
           lyricsEl.style.transform = "none";
           scrollToActiveIfNeeded(activeLine);
-        } else if (_isRightAligned) {
-          // CSS flex centering handles positioning in right-aligned focused mode
-          lyricsEl.style.transform = "none";
         } else {
-          lyricsEl.style.transform = "translateY(-" + offset + "px)";
+          var containerHeight = getScrollContainer().clientHeight;
+          var centerOffset = offset - (containerHeight / 2) + (activeLine.offsetHeight / 2);
+          lyricsEl.style.transform = "translateY(-" + Math.max(0, centerOffset) + "px)";
         }
       }
       fitFocusedFontSize();
@@ -900,45 +899,8 @@
   // Binary-searches for the largest text font-size that makes
   // romaji + text + translation fit within the available content area.
   function fitFocusedFontSize() {
-    if (!_isRightAligned || state.isFullLyricsMode) return;
-    var activeLine = lyricsEl.querySelector(".line.active");
-    if (!activeLine) return;
-
-    // clientHeight includes padding; subtract it to get the actual safe content area
-    var cs = getComputedStyle(lyricsEl);
-    var padTop = parseFloat(cs.paddingTop) || 0;
-    var padBottom = parseFloat(cs.paddingBottom) || 0;
-    var available = lyricsEl.clientHeight - padTop - padBottom;
-    if (available <= 0) available = window.innerHeight * 0.8;
-    var target = available * 0.95;
-
-    var lo = 12, hi = 60;
-    var bestBase = lo;
-
-    // Quick binary search (6 iterations → precision < 1px)
-    for (var iter = 0; iter < 6; iter++) {
-      var mid = (lo + hi) / 2;
-      applyFocusedSizes(mid);
-      var h = activeLine.scrollHeight;
-      if (h <= target) {
-        bestBase = mid;
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-
-    applyFocusedSizes(bestBase);
-    report("fitFocusedFontSize: base=" + Math.round(bestBase) + "px, available=" + Math.round(available) + ", pad=" + Math.round(padTop));
-  }
-
-  function applyFocusedSizes(base) {
-    var textPx = Math.round(base) + "px";
-    var transPx = Math.round(base * 0.62) + "px";
-    var romajiPx = Math.round(base * 0.42) + "px";
-    stageEl.style.setProperty("--focused-text-size", textPx);
-    stageEl.style.setProperty("--focused-trans-size", transPx);
-    stageEl.style.setProperty("--focused-romaji-size", romajiPx);
+    // Font sizes are now handled by CSS for all layouts
+    return;
   }
 
   function setInAppFontScale(scale) {
