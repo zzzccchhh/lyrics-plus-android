@@ -34,6 +34,15 @@
   var cachedActiveSyllables = [];
 
   function recacheActiveSyllables() {
+    // Reset any .syllable.active not on the current active line (old line that just scrolled up)
+    var allActiveSyllables = lyricsEl.querySelectorAll(".syllable.active");
+    var currentActiveLine = lyricsEl.querySelector(".line.active");
+    for (var i = 0; i < allActiveSyllables.length; i++) {
+      var el = allActiveSyllables[i];
+      if (!currentActiveLine || !currentActiveLine.contains(el)) {
+        el.className = "syllable";
+      }
+    }
     cachedActiveSyllables = [];
     var activeLineEl = lyricsEl.querySelector(".line.active");
     if (!activeLineEl) return;

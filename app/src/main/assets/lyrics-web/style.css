@@ -490,6 +490,7 @@ rt {
 
 .syllable.active {
   /* Real-time linear sweeping gradient */
+  color: #ffffff;
   background: linear-gradient(
     to right,
     #ffffff var(--progress, 0%),
@@ -498,7 +499,8 @@ rt {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   display: inline-block;
-  transition: none !important; /* Avoid transitioning while sweeping */
+  transition: color 400ms cubic-bezier(0.22, 0.68, 0.35, 1);
+  /* background/text-fill changes instantly, color transitions smoothly on class removal */
 }
 
 /* Smoothly sweep both the Kanji base text and Furigana annotations in perfect lock-step, avoiding WebKit clipping bugs */
@@ -519,12 +521,3 @@ rt {
   -webkit-text-fill-color: transparent !important;
 }
 
-/* When line becomes past: reset active syllable styling back to dim */
-.line:not(.active) .syllable.active,
-.line:not(.active) .syllable.active ruby,
-.line:not(.active) .syllable.active rt {
-  color: rgba(255, 255, 255, 0.35);
-  background: none !important;
-  -webkit-background-clip: initial !important;
-  -webkit-text-fill-color: initial !important;
-}
