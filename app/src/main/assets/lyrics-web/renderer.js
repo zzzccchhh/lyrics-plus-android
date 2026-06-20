@@ -372,7 +372,7 @@
     // Progressive blur: 2px at dist 1 → 16px at dist 8+
     // opacity: 0.55 at dist 1 → 0.08 at dist 8+
     // scale: 0.92 at dist 1 → 0.75 at dist 8+
-    var blurPx = Math.min(absDist, 8);
+    var blurPx = Math.min(absDist * 0.5, 4);
     var opacity = Math.max(0.55 - (absDist - 1) * 0.065, 0.08);
     var scale = Math.max(0.92 - (absDist - 1) * 0.025, 0.75);
     return "opacity:" + opacity + ";transform:scale(" + scale + ");filter:blur(" + blurPx + "px)";

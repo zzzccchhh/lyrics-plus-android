@@ -350,7 +350,7 @@ private fun LyricsOverlay(
                             bitmap = state.nowPlaying.albumArt,
                             startColorHex = state.nowPlaying.backgroundStart,
                             endColorHex = state.nowPlaying.backgroundEnd,
-                            modifier = Modifier.size(200.dp)
+                            modifier = Modifier.size(300.dp)
                         )
 
                         Spacer(modifier = Modifier.height(20.dp))
