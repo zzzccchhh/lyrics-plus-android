@@ -365,12 +365,11 @@
   // ---------- Focused-mode helpers ----------
 
   function getDistanceStyle(distance) {
-    // Past lines: fully hidden (no blur bar needed)
-    if (distance < 0) {
-      return "opacity:0;transform:scale(0.78)";
-    }
-    var scale = distance === 0 ? 1 : Math.abs(distance) === 1 ? 0.88 : 0.78;
-    var opacity = distance === 0 ? 1 : Math.abs(distance) === 1 ? 0.55 : 0.25;
+    // Only keep up to 2 past lines visible above active
+    if (distance < -2) return "opacity:0;transform:scale(0.78)";
+    var absDist = Math.abs(distance);
+    var scale = absDist === 0 ? 1 : absDist === 1 ? 0.88 : 0.78;
+    var opacity = absDist === 0 ? 1 : absDist === 1 ? 0.55 : 0.25;
     return "opacity:" + opacity + ";transform:scale(" + scale + ")";
   }
 
@@ -666,8 +665,8 @@
 
       if (!isSeek) {
         var prevDistance = i - prevActive;
-        // Skip elements that didn't change state
-        if ((prevDistance > 1 && distance > 1) || (prevDistance < 0 && distance < 0)) {
+        // Skip elements that didn't change state (only past lines beyond -2 are stable)
+        if ((prevDistance > 1 && distance > 1) || (distance < -2 && prevDistance < -2)) {
           continue;
         }
       }
@@ -789,14 +788,17 @@
       }
     }
 
-    // Smoothly move the container so the active line stays at the center of the viewport
+    // Smoothly move the container so the active line stays at the top-quarter of the viewport
+    // with 2 past lines visible above it
     requestAnimationFrame(function () {
       if (lines[active]) {
         var activeLine = lines[active];
-        var offset = activeLine.offsetTop;
         var containerHeight = getScrollContainer().clientHeight;
-        var centerOffset = offset - (containerHeight / 2) + (activeLine.offsetHeight / 2);
-        lyricsEl.style.transform = "translateY(-" + Math.max(0, centerOffset) + "px)";
+        var cs = getComputedStyle(lyricsEl);
+        var padTop = parseFloat(cs.paddingTop) || 0;
+        var anchor = containerHeight * 0.33;
+        var translateY = anchor - padTop - activeLine.offsetTop;
+        lyricsEl.style.transform = "translateY(" + translateY + "px)";
       }
     });
   }
@@ -851,8 +853,11 @@
           scrollToActiveIfNeeded(activeLine);
         } else {
           var containerHeight = getScrollContainer().clientHeight;
-          var centerOffset = offset - (containerHeight / 2) + (activeLine.offsetHeight / 2);
-          lyricsEl.style.transform = "translateY(-" + Math.max(0, centerOffset) + "px)";
+          var cs = getComputedStyle(lyricsEl);
+          var padTop = parseFloat(cs.paddingTop) || 0;
+          var anchor = containerHeight * 0.33;
+          var translateY = anchor - padTop - offset;
+          lyricsEl.style.transform = "translateY(" + translateY + "px)";
         }
       }
       fitFocusedFontSize();
