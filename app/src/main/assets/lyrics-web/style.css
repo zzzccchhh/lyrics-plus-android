@@ -106,8 +106,9 @@ body {
   transform-origin: left center;
   transition:
     transform 500ms cubic-bezier(0.22, 0.68, 0.35, 1),
-    opacity 450ms cubic-bezier(0.22, 0.68, 0.35, 1);
-  will-change: transform, opacity;
+    opacity 450ms cubic-bezier(0.22, 0.68, 0.35, 1),
+    filter 400ms cubic-bezier(0.22, 0.68, 0.35, 1);
+  will-change: transform, opacity, filter;
   contain: content;
 }
 

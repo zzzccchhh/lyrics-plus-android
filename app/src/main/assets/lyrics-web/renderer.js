@@ -368,9 +368,14 @@
     // Only keep up to 2 past lines visible above active
     if (distance < -2) return "opacity:0;transform:scale(0.78)";
     var absDist = Math.abs(distance);
-    var scale = absDist === 0 ? 1 : absDist === 1 ? 0.88 : 0.78;
-    var opacity = absDist === 0 ? 1 : absDist === 1 ? 0.55 : 0.25;
-    return "opacity:" + opacity + ";transform:scale(" + scale + ")";
+    if (absDist === 0) return "opacity:1;transform:scale(1)";
+    // Progressive blur: 2px at dist 1 → 16px at dist 8+
+    // opacity: 0.55 at dist 1 → 0.08 at dist 8+
+    // scale: 0.92 at dist 1 → 0.75 at dist 8+
+    var blurPx = Math.min(absDist, 8);
+    var opacity = Math.max(0.55 - (absDist - 1) * 0.065, 0.08);
+    var scale = Math.max(0.92 - (absDist - 1) * 0.025, 0.75);
+    return "opacity:" + opacity + ";transform:scale(" + scale + ");filter:blur(" + blurPx + "px)";
   }
 
   function getKindClass(distance) {
@@ -654,8 +659,8 @@
       loopEnd = totalLines - 1;
     } else {
       // Only lines near prevActive and active need updates
-      loopStart = Math.max(0, Math.min(prevActive, active) - 2);
-      loopEnd = Math.min(totalLines - 1, Math.max(prevActive, active) + 2);
+      loopStart = Math.max(0, Math.min(prevActive, active) - 4);
+      loopEnd = Math.min(totalLines - 1, Math.max(prevActive, active) + 4);
     }
 
     var hasReadingMode = state.readingMode > 0;
@@ -666,7 +671,7 @@
       if (!isSeek) {
         var prevDistance = i - prevActive;
         // Skip elements that didn't change state (only past lines beyond -2 are stable)
-        if ((prevDistance > 1 && distance > 1) || (distance < -2 && prevDistance < -2)) {
+        if (distance < -2 && prevDistance < -2) {
           continue;
         }
       }
