@@ -1244,6 +1244,7 @@
         if (!state.isFullLyricsMode) {
           // In focused mode, do a full re-render so line visibility/sizing is correct
           prevActiveIndex = -1;
+          lyricsViewportEl = null;
           lyricsEl.style.transition = "none";
           renderFull();
           requestAnimationFrame(function () {

@@ -236,7 +236,7 @@ private fun LyricsOverlay(
         }
     }
 
-    LaunchedEffect(webController.isReady, state.deviceUiMode) {
+    LaunchedEffect(webController.isReady, state.deviceUiMode, isMultiPane) {
         if (!isMultiPane && state.deviceUiMode == 0) {
             webController.webView.evaluateJavascript(
                 """
