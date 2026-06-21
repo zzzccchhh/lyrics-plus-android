@@ -236,6 +236,34 @@ private fun LyricsOverlay(
         }
     }
 
+    LaunchedEffect(webController.isReady, state.deviceUiMode) {
+        if (!isMultiPane && state.deviceUiMode == 0) {
+            webController.webView.evaluateJavascript(
+                """
+                (function(){
+                    var old = document.getElementById('phone-ui-lyrics-top');
+                    if (old) old.remove();
+                    var style = document.createElement('style');
+                    style.id = 'phone-ui-lyrics-top';
+                    style.textContent = '.stage:not(.right-aligned):not(.full-lyrics-mode) .lyrics { top: 7vh !important; }';
+                    document.head.appendChild(style);
+                })();
+                """.trimIndent(),
+                null
+            )
+        } else {
+            webController.webView.evaluateJavascript(
+                """
+                (function(){
+                    var old = document.getElementById('phone-ui-lyrics-top');
+                    if (old) old.remove();
+                })();
+                """.trimIndent(),
+                null
+            )
+        }
+    }
+
     LaunchedEffect(isButtonVisible, isExpanded) {
         if (isButtonVisible && !isExpanded) {
             delay(4000)
@@ -349,11 +377,11 @@ private fun LyricsOverlay(
                     // Left Column: Album art + info as one centered visual group
                     Column(
                         modifier = Modifier
-                            .weight(0.45f)
+                            .weight(if (state.deviceUiMode == 0) 0.38f else 0.45f)
                             .fillMaxHeight()
                             .statusBarsPadding()
                             .navigationBarsPadding()
-                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                            .padding(horizontal = if (state.deviceUiMode == 0) 20.dp else 24.dp, vertical = if (state.deviceUiMode == 0) 12.dp else 16.dp),
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
@@ -361,40 +389,40 @@ private fun LyricsOverlay(
                             bitmap = state.nowPlaying.albumArt,
                             startColorHex = state.nowPlaying.backgroundStart,
                             endColorHex = state.nowPlaying.backgroundEnd,
-                            modifier = Modifier.size(300.dp)
+                            modifier = Modifier.size(if (state.deviceUiMode == 0) 160.dp else 300.dp)
                         )
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                        Spacer(modifier = Modifier.height(if (state.deviceUiMode == 0) 12.dp else 20.dp))
 
                         Text(
                             text = state.nowPlaying.track,
                             color = Color.White,
-                            fontSize = 18.sp,
+                            fontSize = if (state.deviceUiMode == 0) 16.sp else 18.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            lineHeight = 24.sp,
+                            lineHeight = if (state.deviceUiMode == 0) 20.sp else 24.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(if (state.deviceUiMode == 0) 3.dp else 4.dp))
                         Text(
                             text = state.nowPlaying.artist,
                             color = Color(0xB3FFFFFF),
-                            fontSize = 13.sp,
+                            fontSize = if (state.deviceUiMode == 0) 11.sp else 13.sp,
                             fontWeight = FontWeight.Medium,
-                            lineHeight = 18.sp,
+                            lineHeight = if (state.deviceUiMode == 0) 15.sp else 18.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             modifier = Modifier.fillMaxWidth()
                         )
 
-                        Spacer(modifier = Modifier.height(18.dp))
+                        Spacer(modifier = Modifier.height(if (state.deviceUiMode == 0) 12.dp else 18.dp))
 
                         // Playback controls row
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            horizontalArrangement = Arrangement.spacedBy(if (state.deviceUiMode == 0) 16.dp else 24.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             PlayPauseButton(
@@ -435,7 +463,7 @@ private fun LyricsOverlay(
                                 playbackButtonsShowTrigger++
                             }
                         }
-                        .padding(horizontal = 24.dp, vertical = 18.dp)
+                        .padding(horizontal = if (state.deviceUiMode == 0) 20.dp else 24.dp, vertical = if (state.deviceUiMode == 0) 10.dp else 18.dp)
                         .onGloballyPositioned { coordinates ->
                             val h = coordinates.size.height
                             if (h != headerHeightPx) {
@@ -447,23 +475,25 @@ private fun LyricsOverlay(
                 ) {
                     Column(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(
+                            if (state.deviceUiMode == 0) 2.dp else 4.dp
+                        )
                     ) {
                         Text(
                             text = state.nowPlaying.track,
                             color = Color.White,
-                            fontSize = 28.sp,
+                            fontSize = if (state.deviceUiMode == 0) 20.sp else 28.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            lineHeight = 36.sp,
+                            lineHeight = if (state.deviceUiMode == 0) 22.sp else 36.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = state.nowPlaying.artist,
                             color = Color(0xB3FFFFFF),
-                            fontSize = 16.sp,
+                            fontSize = if (state.deviceUiMode == 0) 13.sp else 16.sp,
                             fontWeight = FontWeight.Medium,
-                            lineHeight = 24.sp,
+                            lineHeight = if (state.deviceUiMode == 0) 15.sp else 24.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -612,6 +642,13 @@ private fun LyricsOverlay(
                                         viewModel.toggleKeepScreenOn()
                                     }
                                     MenuActionRow(
+                                        label = if (state.deviceUiMode == 0) "UI模式: 手机" else "UI模式: Pad",
+                                        emoji = "📱",
+                                        active = state.deviceUiMode == 1
+                                    ) {
+                                        viewModel.toggleDeviceUiMode()
+                                    }
+                                    MenuActionRow(
                                         label = if (state.showFloatingLyrics) "桌面歌词: 开启" else "桌面歌词: 关闭",
                                         emoji = "📱",
                                         active = state.showFloatingLyrics
@@ -660,6 +697,13 @@ private fun LyricsOverlay(
                              ) {
                                  viewModel.cycleReadingMode()
                              }
+                            MenuActionRow(
+                                label = if (state.deviceUiMode == 0) "UI模式: 手机" else "UI模式: Pad",
+                                emoji = "📱",
+                                active = state.deviceUiMode == 1
+                            ) {
+                                viewModel.toggleDeviceUiMode()
+                            }
                             MenuActionRow(
                                 label = if (state.keepScreenOn) "屏幕常亮: 开启" else "屏幕常亮: 关闭",
                                 emoji = "💡",
