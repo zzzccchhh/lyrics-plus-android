@@ -463,7 +463,7 @@ private fun LyricsOverlay(
                                 playbackButtonsShowTrigger++
                             }
                         }
-                        .padding(horizontal = if (state.deviceUiMode == 0) 20.dp else 24.dp, vertical = if (state.deviceUiMode == 0) 10.dp else 18.dp)
+                        .padding(horizontal = 24.dp, vertical = 18.dp)
                         .onGloballyPositioned { coordinates ->
                             val h = coordinates.size.height
                             if (h != headerHeightPx) {
@@ -475,25 +475,23 @@ private fun LyricsOverlay(
                 ) {
                     Column(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(
-                            if (state.deviceUiMode == 0) 2.dp else 4.dp
-                        )
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             text = state.nowPlaying.track,
                             color = Color.White,
-                            fontSize = if (state.deviceUiMode == 0) 20.sp else 28.sp,
+                            fontSize = 28.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            lineHeight = if (state.deviceUiMode == 0) 22.sp else 36.sp,
+                            lineHeight = 36.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = state.nowPlaying.artist,
                             color = Color(0xB3FFFFFF),
-                            fontSize = if (state.deviceUiMode == 0) 13.sp else 16.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.Medium,
-                            lineHeight = if (state.deviceUiMode == 0) 15.sp else 24.sp,
+                            lineHeight = 24.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
